@@ -20,3 +20,4 @@ export default defineConfig({
     exclude: ['kokoro-js', 'phonemizer', '@huggingface/transformers'],
   },
 })
+

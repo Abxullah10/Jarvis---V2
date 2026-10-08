@@ -39,3 +39,4 @@ The short interface sounds — wake pips, tool ticks, the completion chime — a
 not files. They're synthesised in Web Audio in `src/lib/sfx.ts`, so there's
 nothing to download and nothing to credit. Drop `wake.mp3`, `listen.mp3`,
 `tool.mp3`, `done.mp3` or `error.mp3` in here to override any of them.
+

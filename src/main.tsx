@@ -13,3 +13,4 @@ applyTheme(savedTheme())
 // microphone and arm the wake-word engine twice, and the second subscription
 // steals the audio stream from the first.
 createRoot(document.getElementById('root')!).render(<App />)
+
