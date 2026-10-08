@@ -496,6 +496,60 @@ function elevenKey() {
 const VOICE_ID = process.env.JARVIS_VOICE_ID ?? 'JBFqnCBsd6RMkjVDRZzb'
 
 /**
+ * Whether the ElevenLabs key may use Speech to Text, found out by asking.
+ *
+ * Sends half a second of silence to Scribe. A 401 or 403 means no; anything
+ * else means yes — including a network failure, which breaks every engine alike
+ * and is not a reason to demote the voice. Cached for ten minutes, keyed on the
+ * key itself, so fixing the key's permissions is picked up without a restart.
+ */
+let sttProbe = { at: 0, key: '', ok: true }
+
+async function sttAllowed() {
+  const key = elevenKey()
+  if (!key) return false
+  if (sttProbe.key === key && Date.now() - sttProbe.at < 10 * 60_000) return sttProbe.ok
+
+  const rate = 16000
+  const pcm = Buffer.alloc(rate) // 0.5 s of 16-bit mono silence
+  const wav = Buffer.alloc(44 + pcm.length)
+  wav.write('RIFF', 0)
+  wav.writeUInt32LE(36 + pcm.length, 4)
+  wav.write('WAVE', 8)
+  wav.write('fmt ', 12)
+  wav.writeUInt32LE(16, 16)
+  wav.writeUInt16LE(1, 20)
+  wav.writeUInt16LE(1, 22)
+  wav.writeUInt32LE(rate, 24)
+  wav.writeUInt32LE(rate * 2, 28)
+  wav.writeUInt16LE(2, 32)
+  wav.writeUInt16LE(16, 34)
+  wav.write('data', 36)
+  wav.writeUInt32LE(pcm.length, 40)
+
+  const form = new FormData()
+  form.append('model_id', 'scribe_v1')
+  form.append('file', new Blob([wav], { type: 'audio/wav' }), 'probe.wav')
+  let ok = true
+  try {
+    const r = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
+      method: 'POST',
+      headers: { 'xi-api-key': key },
+      body: form,
+      signal: AbortSignal.timeout(8000),
+    })
+    if (r.status === 401 || r.status === 403) ok = false
+  } catch {
+    // Network trouble is not a permissions verdict.
+  }
+  if (!ok && sttProbe.ok) {
+    console.warn('[jarvis] ElevenLabs key cannot use Speech to Text — falling back to the browser recogniser')
+  }
+  sttProbe = { at: Date.now(), key, ok }
+  return ok
+}
+
+/**
  * Where /file is permitted to read from, and how big a read may get.
  *
  * The roots are realpath'd once at boot so the containment check below compares
@@ -764,9 +818,8 @@ function netBytes() {
 async function windowsExtras() {
   if (process.platform !== 'win32') return { battery: null, temp: null, netBytes: null }
   // Passed base64 UTF-16LE rather than as a -Command string: Node's own
-  // argument escaping mangles the quotes and pipes on the way to
-  // powershell.exe, which silently lost the $s assignment and left the
-  // network counter empty while the simpler statements still worked.
+  // argument escaping mangles quotes and pipes on the way to powershell.exe,
+  // and the statements that break do so silently, returning nothing.
   const ps = [
     '$b = (Get-CimInstance Win32_Battery | Select-Object -First 1).EstimatedChargeRemaining',
     'Write-Output "$b"',
@@ -867,9 +920,17 @@ const handleRequest = async (req, res) => {
     // with a key the app transcribes with Scribe and speaks with ElevenLabs;
     // without one it falls back to the browser's own recogniser and voice, so a
     // student with nothing configured still has a working assistant.
+    //
+    // A key existing is not the same as a key that can transcribe. ElevenLabs
+    // keys can be restricted per endpoint, and one with Text to Speech but not
+    // Speech to Text made the app pick Scribe and then drop every utterance on
+    // a 401 — he talked fine and heard nothing, with no visible error. So the
+    // transcription flag is a tested capability, and a key that cannot do it
+    // leaves the browser's recogniser in charge instead.
     const eleven = Boolean(elevenKey())
+    const stt = eleven && (await sttAllowed())
     res.writeHead(200, { ...cors, 'content-type': 'application/json' })
-    return res.end(JSON.stringify({ ok: true, tts: eleven, stt: eleven }))
+    return res.end(JSON.stringify({ ok: true, tts: eleven, stt }))
   }
 
   // Live machine telemetry for the DIAGNOSTICS, POWER and ENVIRONMENT panels.
