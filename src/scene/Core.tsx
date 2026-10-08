@@ -264,6 +264,7 @@ export function Core({ drive }: { drive: Drive }) {
     u.uIntensity.value = r.intensity
     u.uStyle.value = r.style
     ;(u.uColor.value as THREE.Color).lerp(r.color, Math.min(1, dt * 2.5))
+    ;(u.uHot.value as THREE.Color).copy(drive.hot)
   })
 
   return (

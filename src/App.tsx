@@ -651,6 +651,14 @@ export default function App() {
         return
       }
 
+      // C cycles the interface theme (DeFa / Obsidian, see theme.ts). The
+      // store puts it on <html> for CSS and hands the scene its colours.
+      if (e.key === 'c' && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault()
+        useStore.getState().cycleTheme()
+        return
+      }
+
       // Escape stands the whole thing down — the one thing the old build had
       // no key for at all.
       if (e.key === 'Escape') {

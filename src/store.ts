@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { THEMES, THEME_ORDER, applyTheme, savedTheme, type ThemeName } from './theme'
 
 export type Phase =
   | 'offline'   // waiting for the click that unlocks audio
@@ -240,7 +241,12 @@ type State = {
   expandedBlade: string | null
   /** JARVIS's control over his own appearance. UI_DEFAULTS == the stock look. */
   ui: UiState
+  /** Interface theme; see theme.ts. */
+  theme: ThemeName
 
+  setTheme: (t: ThemeName) => void
+  /** Steps to the next theme in THEME_ORDER. */
+  cycleTheme: () => void
   setVoice: (v: string) => void
   setGestures: (on: boolean) => void
   setLooking: (why: string | null) => void
@@ -287,6 +293,18 @@ export const useStore = create<State>((set) => ({
   expandedBlade: null,
   bootNote: '',
   ui: defaultUi(),
+  theme: savedTheme(),
+
+  setTheme: (theme) => {
+    applyTheme(theme)
+    set({ theme })
+  },
+  cycleTheme: () =>
+    set((s) => {
+      const theme = THEME_ORDER[(THEME_ORDER.indexOf(s.theme) + 1) % THEME_ORDER.length]
+      applyTheme(theme)
+      return { theme }
+    }),
 
   setVoice: (voice) => set({ voice }),
   setGestures: (gestures) => set({ gestures }),
@@ -415,17 +433,8 @@ export const useStore = create<State>((set) => ({
     }),
 }))
 
-/** Colour identity per phase — shared by the 3D scene and the 2D HUD. */
-export const phaseColor: Record<Phase, string> = {
-  offline: '#0d4a4a',
-  boot: '#17b3b3',
-  dormant: '#12908f',
-  waking: '#5cf2ef',
-  listening: '#19d8d2',
-  thinking: '#f0a93c',
-  tooling: '#a97bff',
-  speaking: '#3ef2a8',
-}
+/** Colour identity per phase in the default theme. Per-theme maps live in theme.ts. */
+export const phaseColor: Record<Phase, string> = THEMES.defa.phase
 
 /**
  * What colour is the interface right now.
@@ -434,10 +443,10 @@ export const phaseColor: Record<Phase, string> = {
  * glowing one colour behind a rail glowing another is the single most obvious
  * way this comes apart on camera — so the resolution order lives here once
  * instead of being reimplemented either side of the canvas boundary. A blanket
- * accent wins over a per-phase override, which wins over the built-in map.
+ * accent wins over a per-phase override, which wins over the theme's map.
  */
-export function accentFor(phase: Phase, ui: UiState): string {
-  return ui.accent ?? ui.palette[phase] ?? phaseColor[phase]
+export function accentFor(phase: Phase, ui: UiState, theme: ThemeName): string {
+  return ui.accent ?? ui.palette[phase] ?? THEMES[theme].phase[phase]
 }
 
 // Handy while dressing the scene for camera: in the dev server you can drive

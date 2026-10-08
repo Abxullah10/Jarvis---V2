@@ -1,13 +1,55 @@
-@import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;600&family=JetBrains+Mono:wght@300;400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;600&family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400&display=swap');
 
-:root {
-  /* The interface cyan. `--accent` is re-declared per phase and per panel;
-     this one stays put and is what anything neutral pins itself to. */
-  --interface: #00e5ff;
+:root,
+:root[data-theme='defa'] {
+  /* ------------------------------------------------------------- THEME 1
+     "DeFa" — the DeFa brand book: blue ground running #6297FD -> #356DC5,
+     white instrument light, soft-blue and lavender glow, frosted-glass
+     surfaces. Strict blue and white. The 3D colours for this theme live in
+     theme.ts; everything 2D derives from the tokens below.
+
+     --interface  the neutral instrument colour; --accent re-declares per
+                  phase and per panel, this one stays put
+     --bg         the ground the 3D sits on (may be a gradient)
+     --text       body copy and anything meant to be read
+     --text-dim   labels, units, secondary readouts
+     --surface    the glass behind chips and cards
+     --sheet-1/2  the reading surface of a blade (needs to be near-opaque)
+     --shade      drop shadows
+     --vignette   the edge falloff over the whole frame
+     --scan       scanline colour (transparent = none)
+     --font       the interface face */
+  --interface: #ffffff;
   --accent: var(--interface);
-  --bg: #01060c;
-  font-family: 'Chakra Petch', system-ui, sans-serif;
+  --bg: radial-gradient(ellipse 85% 75% at 50% 46%, #7aa8ff 0%, #6297fd 38%, #4a80ea 68%, #356dc5 100%);
+  --text: #ffffff;
+  --text-dim: #d9e7ff;
+  --surface: rgba(255, 255, 255, 0.14);
+  --sheet-1: rgba(58, 106, 214, 0.94);
+  --sheet-2: rgba(44, 88, 190, 0.96);
+  --shade: rgba(24, 48, 128, 0.45);
+  --vignette: rgba(30, 62, 150, 0.5);
+  --scan: transparent;
+  --font: 'Outfit', system-ui, sans-serif;
+  font-family: var(--font);
   color-scheme: dark;
+}
+
+/* ----------------------------------------------------------------- THEME 2
+   "Obsidian" — black ground, blue instrument light, white text. */
+:root[data-theme='obsidian'] {
+  --interface: #2e86ff;
+  --accent: var(--interface);
+  --bg: radial-gradient(ellipse 80% 70% at 50% 46%, #04112a 0%, #010612 55%, #000000 100%);
+  --text: #ffffff;
+  --text-dim: #8ea8c9;
+  --surface: rgba(2, 10, 26, 0.55);
+  --sheet-1: rgba(4, 12, 28, 0.94);
+  --sheet-2: rgba(1, 6, 16, 0.96);
+  --shade: rgba(0, 0, 0, 0.62);
+  --vignette: rgba(0, 0, 0, 0.55);
+  --scan: color-mix(in srgb, #2e86ff 11%, transparent);
+  --font: 'Chakra Petch', system-ui, sans-serif;
 }
 
 * {
@@ -31,11 +73,11 @@ body::after {
   pointer-events: none;
   z-index: 5;
   background:
-    radial-gradient(ellipse at center, transparent 30%, rgba(0, 0, 0, 0.55) 100%),
+    radial-gradient(ellipse at center, transparent 30%, var(--vignette) 100%),
     repeating-linear-gradient(
       0deg,
-      rgba(0, 229, 255, 0.028) 0px,
-      rgba(0, 229, 255, 0.028) 1px,
+      var(--scan) 0px,
+      var(--scan) 1px,
       transparent 1px,
       transparent 3px
     );
@@ -54,7 +96,7 @@ body::after {
   inset: 0;
   z-index: 4;
   pointer-events: none;
-  color: var(--accent);
+  color: var(--text);
   transition: color 600ms ease;
   text-transform: uppercase;
   letter-spacing: 0.16em;
@@ -201,7 +243,7 @@ body::after {
   padding: 7px 16px 7px 14px;
   border: 1px solid color-mix(in srgb, var(--accent) 38%, transparent);
   border-radius: 2px;
-  background: color-mix(in srgb, var(--accent) 9%, rgba(2, 10, 12, 0.55));
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface));
   backdrop-filter: blur(5px);
   box-shadow: 0 0 30px color-mix(in srgb, var(--accent) 22%, transparent);
   /* Above the panels and the log so a long tool name reads cleanly, but it is a
@@ -403,8 +445,8 @@ kbd {
   padding: 14px 16px;
   background: linear-gradient(
     160deg,
-    color-mix(in srgb, var(--accent) 9%, transparent),
-    color-mix(in srgb, var(--accent) 3%, transparent)
+    color-mix(in srgb, var(--accent) 9%, var(--surface)),
+    color-mix(in srgb, var(--accent) 3%, var(--surface))
   );
   backdrop-filter: blur(7px);
   transform-origin: top center;
@@ -803,19 +845,19 @@ kbd {
   z-index: 7;
   display: grid;
   place-items: center;
-  background: radial-gradient(ellipse at center, #04121c 0%, #01060c 70%);
+  background: var(--bg);
   border: 0;
   cursor: pointer;
   font-family: inherit;
-  color: #4fd6ff;
+  color: var(--interface);
 }
 
 .ignition-ring {
   position: absolute;
   width: 240px;
   height: 240px;
-  border: 1px solid rgba(79, 214, 255, 0.28);
-  border-top-color: rgba(79, 214, 255, 0.9);
+  border: 1px solid color-mix(in srgb, var(--interface) 28%, transparent);
+  border-top-color: color-mix(in srgb, var(--interface) 90%, transparent);
   border-radius: 50%;
 }
 
@@ -830,7 +872,7 @@ kbd {
   font-size: 15px;
   letter-spacing: 0.52em;
   text-indent: 0.52em; /* balance the trailing letter-space */
-  text-shadow: 0 0 30px rgba(79, 214, 255, 0.7);
+  text-shadow: 0 0 30px color-mix(in srgb, var(--interface) 70%, transparent);
 }
 
 .ignition-sub {
@@ -841,7 +883,7 @@ kbd {
 }
 
 .ignition:hover .ignition-word {
-  text-shadow: 0 0 44px rgba(79, 214, 255, 1);
+  text-shadow: 0 0 44px var(--interface);
 }
 
 /* ------------------------------------------------------------------- boot */
@@ -851,7 +893,7 @@ kbd {
   inset: 0;
   z-index: 6;
   background: var(--bg);
-  color: var(--accent);
+  color: var(--text);
   overflow: hidden;
 }
 
@@ -1572,13 +1614,13 @@ kbd {
   padding: 0;
   background: linear-gradient(
     160deg,
-    color-mix(in srgb, var(--accent) 11%, rgba(4, 12, 18, 0.94)),
-    color-mix(in srgb, var(--accent) 4%, rgba(2, 8, 12, 0.96))
+    color-mix(in srgb, var(--accent) 11%, var(--sheet-1)),
+    color-mix(in srgb, var(--accent) 4%, var(--sheet-2))
   );
   border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
   backdrop-filter: blur(14px);
   box-shadow:
-    0 24px 70px rgba(0, 0, 0, 0.62),
+    0 24px 70px var(--shade),
     0 0 0 1px color-mix(in srgb, var(--accent) 8%, transparent) inset;
   transform-origin: center center;
 }
@@ -1586,7 +1628,7 @@ kbd {
 /* Only the front blade gets the accent glow; the ones behind read as paper. */
 .bl-front {
   box-shadow:
-    0 26px 80px rgba(0, 0, 0, 0.7),
+    0 26px 80px var(--shade),
     0 0 34px -10px color-mix(in srgb, var(--accent) 46%, transparent),
     0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent) inset;
 }
@@ -1896,3 +1938,39 @@ kbd {
   transform: scaleX(-1);
   background: #000;
 }
+
+/* ------------------------------------------------------------ theme switch */
+
+.theme-switch {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  margin-right: 28px;
+  padding: 6px 14px 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--text) 45%, transparent);
+  border-radius: 999px;
+  background: var(--surface);
+  backdrop-filter: blur(8px);
+  color: var(--text);
+  font: inherit;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+.theme-switch:hover {
+  border-color: var(--text);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.theme-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid var(--text);
+  background: linear-gradient(135deg, #6297fd 50%, #000 50%);
+}
+:root[data-theme='obsidian'] .theme-swatch { background: linear-gradient(135deg, #000 50%, #2e86ff 50%); }
+.theme-switch + .status { margin-left: 0; }

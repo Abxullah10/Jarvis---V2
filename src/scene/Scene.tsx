@@ -13,6 +13,7 @@ import { Core } from './Core'
 import { Particles } from './Particles'
 import { Orbits } from './Orbits'
 import { useStore, phaseColor, accentFor, type Phase } from '../store'
+import { THEMES } from '../theme'
 
 /** Rings spin harder while JARVIS is working — reads as effort. */
 const spinFor: Record<Phase, number> = {
@@ -59,6 +60,8 @@ const AMP_LIVE = 0.085
  */
 export type Drive = {
   color: THREE.Color
+  /** The ring's highlight colour, eased toward the theme's. */
+  hot: THREE.Color
   /** 0..1 smoothed loudness, with an idle breath under it. */
   level: number
   /** Rotation multiplier for the drifting dust. */
@@ -110,6 +113,7 @@ function Rig() {
   const drive = useMemo<Drive>(
     () => ({
       color: new THREE.Color(phaseColor.offline),
+      hot: new THREE.Color(THEMES.defa.hot),
       level: 0,
       spin: spinFor.offline,
       amp: AMP_CALM,
@@ -126,6 +130,7 @@ function Rig() {
     [],
   )
   const target = useMemo<Tint>(() => ({ key: '', color: new THREE.Color() }), [])
+  const hotTarget = useMemo<Tint>(() => ({ key: '', color: new THREE.Color() }), [])
   const reactorTarget = useMemo<Tint>(
     () => ({ key: '', color: new THREE.Color() }),
     [],
@@ -133,13 +138,14 @@ function Rig() {
 
   useFrame((state, dt) => {
     // Read imperatively rather than subscribing — see the note on Drive.
-    const { phase, level, ui } = useStore.getState()
+    const { phase, level, ui, theme } = useStore.getState()
 
     // accentFor owns the accent -> palette -> phase resolution order. The scene
     // asking the store for the answer rather than working it out again is what
     // keeps the orb and the HUD from ever disagreeing about the colour.
-    const accent = accentFor(phase, ui)
+    const accent = accentFor(phase, ui, theme)
     drive.color.lerp(aim(target, accent), Math.min(1, dt * 2.5))
+    drive.hot.lerp(aim(hotTarget, THEMES[theme].hot), Math.min(1, dt * 2.5))
 
     const r = ui.reactor
     drive.reactor.color.lerp(

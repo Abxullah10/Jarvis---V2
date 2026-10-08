@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useStore, accentFor, type Phase } from '../store'
+import { THEMES } from '../theme'
 import { Suggestions } from './Suggestions'
 import { BladeSweep, Blades } from './Blades'
 import { Effects } from './Effects'
@@ -159,11 +160,13 @@ export function Hud() {
   const gestures = useStore((s) => s.gestures)
   const looking = useStore((s) => s.looking)
   const ui = useStore((s) => s.ui)
+  const theme = useStore((s) => s.theme)
+  const cycleTheme = useStore((s) => s.cycleTheme)
 
   // accentFor folds JARVIS's overrides in over the phase colour, so one
   // variable on the root carries a theme change into every .hud-* rule without
   // a single component knowing a theme exists.
-  const colour = accentFor(phase, ui)
+  const colour = accentFor(phase, ui, theme)
 
   useEffect(() => {
     // The ground has to be set on the document, not painted here: the HUD sits
@@ -194,6 +197,16 @@ export function Hud() {
             <span className="brand-sub">Just A Rather Very Intelligent System</span>
           </div>
         )}
+
+        <button
+          type="button"
+          className="theme-switch"
+          onClick={cycleTheme}
+          title="Switch theme (C)"
+        >
+          <span className="theme-swatch" />
+          {THEMES[theme].label}
+        </button>
 
         <div className="status">
           <span className="dot" />

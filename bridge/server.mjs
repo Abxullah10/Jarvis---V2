@@ -22,6 +22,8 @@ import { uiServer } from './ui.mjs'
 import { chromeAvailable, chromeServer } from './chrome.mjs'
 import { visionServer } from './vision.mjs'
 import { homedir, tmpdir } from 'node:os'
+import * as osModule from 'node:os'
+import { spawn } from 'node:child_process'
 import { readFileSync, realpathSync } from 'node:fs'
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve as resolvePath } from 'node:path'
@@ -688,6 +690,115 @@ function corsFor(req) {
   return headers
 }
 
+
+/**
+ * Machine telemetry for the HUD's instrument panels.
+ *
+ * cpuTimes() samples the aggregate busy/idle counters; the percentage is the
+ * delta between two samples, because the absolute counters are since-boot and
+ * would show a flat average forever. Same reasoning for the network rate.
+ */
+function cpuTimes() {
+  let busy = 0
+  let idle = 0
+  for (const c of osModule.cpus()) {
+    busy += c.times.user + c.times.nice + c.times.sys + c.times.irq
+    idle += c.times.idle
+  }
+  return { busy, idle }
+}
+
+let lastCpu = cpuTimes()
+let lastNet = null
+
+/** Windows-only extras. Absent elsewhere, and absent on a desktop with no battery. */
+async function windowsExtras() {
+  if (process.platform !== 'win32') return { battery: null, temp: null, netBytes: null }
+  // Passed base64 UTF-16LE rather than as a -Command string: Node's own
+  // argument escaping mangles the quotes and pipes on the way to
+  // powershell.exe, which silently lost the $s assignment and left the
+  // network counter empty while the simpler statements still worked.
+  const ps = [
+    '$b = (Get-CimInstance Win32_Battery | Select-Object -First 1).EstimatedChargeRemaining',
+    '$t = (Get-CimInstance -Namespace root/wmi MSAcpi_ThermalZoneTemperature -ErrorAction SilentlyContinue | Select-Object -First 1).CurrentTemperature',
+    '$s = @(Get-NetAdapterStatistics -ErrorAction SilentlyContinue)',
+    '$n = if ($s.Count) { ($s | Measure-Object -Property ReceivedBytes -Sum).Sum + ($s | Measure-Object -Property SentBytes -Sum).Sum } else { $null }',
+    'Write-Output "$b|$t|$n"',
+  ].join("`n")
+  const encoded = Buffer.from(ps, 'utf16le').toString('base64')
+  const out = await new Promise((resolve) => {
+    const child = spawn('powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
+      { windowsHide: true })
+    let buf = ''
+    const timer = setTimeout(() => { child.kill(); resolve('') }, 4000)
+    child.stdout.on('data', (d) => (buf += d))
+    child.on('close', () => { clearTimeout(timer); resolve(buf.trim()) })
+    child.on('error', () => { clearTimeout(timer); resolve('') })
+  })
+  const [b, t, n] = out.split('|').map((s) => s.trim())
+  return {
+    battery: b ? Number(b) : null,
+    // MSAcpi reports tenths of a kelvin.
+    temp: t ? Math.round(Number(t) / 10 - 273.15) : null,
+    netBytes: n ? Number(n) : null,
+  }
+}
+
+async function systemStats() {
+  const now = cpuTimes()
+  const dBusy = now.busy - lastCpu.busy
+  const dIdle = now.idle - lastCpu.idle
+  const total = dBusy + dIdle
+  lastCpu = now
+  const cpu = total > 0 ? Math.round((dBusy / total) * 100) : 0
+
+  const extras = await windowsExtras()
+  let netRate = null
+  if (extras.netBytes != null) {
+    const at = Date.now()
+    if (lastNet && extras.netBytes >= lastNet.bytes) {
+      const secs = (at - lastNet.at) / 1000
+      if (secs > 0) netRate = Math.round((extras.netBytes - lastNet.bytes) / secs)
+    }
+    lastNet = { bytes: extras.netBytes, at }
+  }
+
+  const totalMem = osModule.totalmem()
+  return {
+    cpu,
+    memUsed: totalMem - osModule.freemem(),
+    memTotal: totalMem,
+    net: netRate,
+    temp: extras.temp,
+    battery: extras.battery,
+    uptime: Math.round(process.uptime()),
+    hostUptime: Math.round(osModule.uptime()),
+  }
+}
+
+let weatherCache = { at: 0, value: null }
+
+async function weatherNow() {
+  if (weatherCache.value && Date.now() - weatherCache.at < 15 * 60_000) return weatherCache.value
+  const r = await fetch('https://wttr.in/?format=j1', { headers: { 'user-agent': 'curl' } })
+  if (!r.ok) throw new Error(`wttr ${r.status}`)
+  const d = await r.json()
+  const c = d.current_condition[0]
+  const area = d.nearest_area?.[0]
+  const value = {
+    temp: Number(c.temp_C),
+    desc: c.weatherDesc[0].value.trim(),
+    humidity: Number(c.humidity),
+    wind: Number(c.windspeedKmph),
+    windDir: c.winddir16Point ?? '',
+    place: area ? area.areaName[0].value : '',
+    country: area ? area.country[0].value : '',
+  }
+  weatherCache = { at: Date.now(), value }
+  return value
+}
+
 // One HTTP server for both the speech proxy and the WebSocket upgrade.
 const http = await import('node:http')
 
@@ -714,6 +825,32 @@ const handleRequest = async (req, res) => {
     const eleven = Boolean(elevenKey())
     res.writeHead(200, { ...cors, 'content-type': 'application/json' })
     return res.end(JSON.stringify({ ok: true, tts: eleven, stt: eleven }))
+  }
+
+  // Live machine telemetry for the DIAGNOSTICS, POWER and ENVIRONMENT panels.
+  //
+  // The panels in the mock-up are the kind of thing that is usually faked with
+  // a random walk. There is no need: cpu load, memory and uptime come out of
+  // node:os, network is a byte-delta between two polls, and battery and core
+  // temperature come from Windows itself. Anything genuinely unavailable comes
+  // back null and the panel renders a dash, which is honest and also the
+  // behaviour you want on a desktop with no battery.
+  if (req.method === 'GET' && req.url === '/sys') {
+    res.writeHead(200, { ...cors, 'content-type': 'application/json' })
+    return res.end(JSON.stringify(await systemStats()))
+  }
+
+  // Current conditions, from wttr.in: free, no key, location inferred from the
+  // connection. Cached for fifteen minutes because the panel polls far faster
+  // than the weather changes and the service is someone else's to be kind to.
+  if (req.method === 'GET' && req.url === '/weather') {
+    try {
+      res.writeHead(200, { ...cors, 'content-type': 'application/json' })
+      return res.end(JSON.stringify(await weatherNow()))
+    } catch {
+      res.writeHead(502, { ...cors, 'content-type': 'application/json' })
+      return res.end(JSON.stringify({ error: 'unavailable' }))
+    }
   }
 
   // Serve local image files to the page. Screenshots and generated art land on
