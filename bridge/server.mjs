@@ -439,6 +439,35 @@ Using tools:
 - If you don't know, say you don't know.`
 
 /**
+ * Standing context: who the user is and what he works on.
+ *
+ * Lives at ~/.jarvis/context.md, outside the repo, so personal facts never land
+ * in git, survive a `git pull`, and can be edited without touching source.
+ *
+ * It is injected here because `settingSources: []` below stops the SDK loading
+ * any CLAUDE.md at all - without this file JARVIS knows nothing about the
+ * person he is speaking to. Read once at boot: restart to pick up an edit.
+ */
+function userContext() {
+  try {
+    const text = readFileSync(join(homedir(), '.jarvis', 'context.md'), 'utf8').trim()
+    if (!text) return ''
+    return `
+
+WHAT YOU ALREADY KNOW.
+Standing context about the user and his work, all of it true. Use it as you
+would anything you already knew - never recite it, never read it as a list.
+
+${text}`
+  } catch {
+    return ''
+  }
+}
+
+const USER_CONTEXT = userContext()
+
+
+/**
  * ElevenLabs credentials, borrowed from the MCP server config.
  *
  * If you've set up the elevenlabs MCP server, the key is already on this
@@ -1219,7 +1248,7 @@ wss.on('connection', (socket) => {
       // tuned for a coding agent — verbose, file-oriented, and a large chunk
       // of input tokens on every turn. Replacing it makes the persona stick,
       // keeps answers short enough to speak, and cuts cost per turn.
-      systemPrompt: SYSTEM_PROMPT,
+      systemPrompt: SYSTEM_PROMPT + USER_CONTEXT,
       // Run from the home directory so project-scoped MCP servers don't shadow
       // the global ones, and so file tools have a sane root.
       cwd: homedir(),
