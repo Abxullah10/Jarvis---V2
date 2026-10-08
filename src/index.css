@@ -1974,3 +1974,734 @@ kbd {
 }
 :root[data-theme='obsidian'] .theme-swatch { background: linear-gradient(135deg, #000 50%, #2e86ff 50%); }
 .theme-switch + .status { margin-left: 0; }
+
+/* ------------------------------------------------------- INSTRUMENT PANELS
+
+   The numbered panels down either side of the reactor. Everything is drawn
+   from the four theme tokens, so both themes get this for free: --accent for
+   instrument light, --text for anything read, --surface for the glass,
+   --text-dim for labels and units.
+
+   The columns are fixed-width and anchored to the frame edges rather than
+   flowed, because the reactor owns the middle of the screen and the panels
+   have to stay out of it at every window size. */
+
+.column {
+  position: absolute;
+  top: 150px;
+  bottom: 56px;
+  width: 296px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  pointer-events: none;
+  /* Panels can outgrow a short window; let them scroll rather than collide
+     with the comms bar, and keep the scrollbar out of the picture. */
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.column::-webkit-scrollbar { display: none; }
+
+.column-left { left: 60px; }
+.column-right { right: 60px; }
+
+.inst {
+  position: relative;
+  padding: 14px 16px 16px;
+  background: var(--surface);
+  backdrop-filter: blur(5px);
+  /* Corner brackets rather than a full border: the mock-up's frame is drawn
+     at the corners only, which reads as an instrument bezel. The two gradients
+     paint the top pair and the bottom pair. */
+  border: 1px solid color-mix(in srgb, var(--accent) 16%, transparent);
+  box-shadow: 0 2px 20px var(--shade);
+}
+
+.inst::before,
+.inst::after {
+  content: '';
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  pointer-events: none;
+}
+
+.inst::before {
+  top: -1px;
+  left: -1px;
+  border-right: 0;
+  border-bottom: 0;
+}
+
+.inst::after {
+  right: -1px;
+  bottom: -1px;
+  border-left: 0;
+  border-top: 0;
+}
+
+.inst-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.inst-n {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  line-height: 1;
+  padding: 3px 4px;
+  color: var(--bg-ink, #04102a);
+  background: var(--accent);
+  letter-spacing: 0.04em;
+}
+
+/* The number chip sits on the accent, so its text has to be the ground, not
+   --text. Obsidian's ground is near-black and DeFa's is blue; both read. */
+:root[data-theme='obsidian'] .inst-n { color: #04112a; }
+:root[data-theme='defa'] .inst-n { color: #356dc5; }
+
+.inst-title {
+  flex: 1;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.inst-tag {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--text-dim);
+  opacity: 0.8;
+}
+
+.inst-body {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.inst-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.inst-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.inst-label {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.inst-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.inst-empty {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--text-dim);
+  opacity: 0.75;
+}
+
+/* ---- segmented bars ---- */
+
+.seg {
+  display: flex;
+  gap: 2px;
+  height: 7px;
+}
+
+.seg > span {
+  flex: 1;
+  transition: background 220ms ease;
+}
+
+.seg-on { background: var(--accent); }
+.seg-off { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+
+/* ---- activity trace ---- */
+
+.trace {
+  height: 68px;
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  border-left: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.trace svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.trace-grid {
+  stroke: color-mix(in srgb, var(--accent) 14%, transparent);
+  stroke-width: 0.5;
+}
+
+.trace-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent) 60%, transparent));
+}
+
+/* ---- ring gauges ---- */
+
+.rings {
+  display: flex;
+  gap: 18px;
+  justify-content: center;
+  padding-top: 4px;
+}
+
+.ring {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 50%;
+}
+
+.ring svg {
+  width: 100%;
+  max-width: 92px;
+  height: auto;
+  display: block;
+}
+
+.ring-track {
+  fill: none;
+  stroke: color-mix(in srgb, var(--accent) 18%, transparent);
+  stroke-width: 5;
+}
+
+.ring-fill {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 5;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 600ms ease;
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--accent) 55%, transparent));
+}
+
+.ring-text {
+  fill: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 19px;
+  letter-spacing: 0.02em;
+}
+
+.ring-label {
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+/* ---- environment ---- */
+
+.env-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.env-temp {
+  font-size: 44px;
+  line-height: 0.9;
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.env-where {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-top: 5px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.env-where .dim { color: var(--text-dim); }
+
+/* ---- modules ---- */
+
+.mod-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.mod-dot {
+  width: 7px;
+  height: 7px;
+  transform: rotate(45deg);
+  flex: none;
+}
+
+.mod-online {
+  background: var(--accent);
+  box-shadow: 0 0 7px color-mix(in srgb, var(--accent) 75%, transparent);
+}
+
+.mod-standby {
+  background: transparent;
+  border: 1px solid var(--text-dim);
+}
+
+.mod-name {
+  flex: 1;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.mod-state {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+}
+
+/* ---- clock in the header ---- */
+
+.clock {
+  text-align: center;
+  pointer-events: none;
+}
+
+.clock-time {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 34px;
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  color: var(--text);
+  text-shadow: 0 0 26px color-mix(in srgb, var(--accent) 45%, transparent);
+  /* Tabular figures: without them the whole clock shifts every second as the
+     digits change width. */
+  font-variant-numeric: tabular-nums;
+}
+
+.clock-date {
+  margin-top: 5px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  color: var(--text-dim);
+}
+
+/* ---- comms command line ---- */
+
+.comms-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.comms-caret {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.comms-prompt {
+  flex: 1;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.comms-wave {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 14px;
+  width: 54px;
+}
+
+.comms-wave > span {
+  flex: 1;
+  background: var(--accent);
+  transition: height 90ms linear;
+  align-self: center;
+}
+
+/* On a laptop screen the columns would crowd the reactor; pull them in and
+   let the panels shrink before anything overlaps. */
+@media (max-width: 1500px) {
+  .column { width: 250px; }
+  .comms { width: 320px; right: 32px; }
+  .column-left { left: 32px; }
+  .column-right { right: 32px; }
+}
+
+@media (max-width: 1150px) {
+  .column { display: none; }
+}
+
+/* ------------------------------------------------------------- THE REACTOR
+
+   A vector instrument face, not a glow. Hard edges, countable ticks, readable
+   bearings. --core-hot is the one colour the centre burns at; both themes set
+   it, because the core reads as white-hot on blue and blue-hot on black. */
+
+:root[data-theme='defa'] { --core-hot: #ffffff; }
+:root[data-theme='obsidian'] { --core-hot: #6cb4ff; }
+
+.reactor-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.reactor {
+  width: min(60vh, 40vw);
+  height: auto;
+  overflow: visible;
+}
+
+/* Rotations. Several bands turn at different rates and directions, which is
+   what stops a set of concentric circles reading as a single flat disc. */
+@keyframes r-cw { to { transform: rotate(360deg); } }
+@keyframes r-ccw { to { transform: rotate(-360deg); } }
+
+.r-spin-slow,
+.r-spin-slow-rev,
+.r-spin-fast,
+.r-spin-blades {
+  transform-origin: 500px 500px;
+}
+
+.r-spin-slow { animation: r-cw 150s linear infinite; }
+.r-spin-slow-rev { animation: r-ccw 90s linear infinite; }
+.r-spin-fast { animation: r-cw 42s linear infinite; }
+.r-spin-blades { animation: r-ccw 70s linear infinite; }
+
+/* Thinking speeds the whole dial up — the one place motion carries meaning. */
+.reactor-busy .r-spin-fast { animation-duration: 9s; }
+.reactor-busy .r-spin-slow-rev { animation-duration: 24s; }
+.reactor-busy .r-spin-blades { animation-duration: 16s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .r-spin-slow,
+  .r-spin-slow-rev,
+  .r-spin-fast,
+  .r-spin-blades {
+    animation: none;
+  }
+}
+
+.r-hair {
+  fill: none;
+  stroke: color-mix(in srgb, var(--accent) 30%, transparent);
+  stroke-width: 1.5;
+}
+
+.r-hair-faint {
+  fill: none;
+  stroke: color-mix(in srgb, var(--accent) 16%, transparent);
+  stroke-width: 1;
+}
+
+.r-cross {
+  stroke: color-mix(in srgb, var(--accent) 55%, transparent);
+  stroke-width: 3;
+}
+
+.r-bearing {
+  fill: var(--text-dim);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 17px;
+  letter-spacing: 0.1em;
+  opacity: 0.75;
+}
+
+.r-tick {
+  stroke: color-mix(in srgb, var(--accent) 65%, transparent);
+  stroke-width: 2.5;
+}
+
+.r-tick-fine {
+  stroke: color-mix(in srgb, var(--accent) 42%, transparent);
+  stroke-width: 1.6;
+}
+
+.r-arc {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 15;
+  stroke-linecap: butt;
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--accent) 55%, transparent));
+}
+
+.r-blade {
+  fill: color-mix(in srgb, var(--accent) 42%, transparent);
+  stroke: color-mix(in srgb, var(--accent) 70%, transparent);
+  stroke-width: 1.5;
+}
+
+.r-glow { opacity: 0.85; }
+
+.r-core {
+  fill: var(--core-hot);
+  opacity: 0.92;
+}
+
+.r-core-rim {
+  fill: none;
+  stroke: #ffffff;
+  stroke-width: 2;
+  opacity: 0.6;
+}
+
+.r-name {
+  fill: var(--core-ink, #0b2a5c);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 54px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+}
+
+/* The core is light in both themes, so its lettering is the ground colour. */
+:root[data-theme='defa'] .r-name { fill: #2c58be; }
+:root[data-theme='obsidian'] .r-name { fill: #04112a; }
+
+.r-state {
+  fill: var(--core-ink, #0b2a5c);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 19px;
+  letter-spacing: 0.3em;
+  opacity: 0.85;
+}
+
+:root[data-theme='defa'] .r-state { fill: #2c58be; }
+:root[data-theme='obsidian'] .r-state { fill: #04112a; }
+
+.r-state-dot {
+  fill: var(--core-ink, #0b2a5c);
+  opacity: 0.85;
+}
+
+:root[data-theme='defa'] .r-state-dot { fill: #2c58be; }
+:root[data-theme='obsidian'] .r-state-dot { fill: #04112a; }
+
+/* ---- callouts either side of the dial ---- */
+
+.callouts {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.callout {
+  position: absolute;
+  top: 24%;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-bottom: 6px;
+  width: 160px;
+}
+
+.callout-left {
+  left: 29%;
+  text-align: left;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.callout-right {
+  right: 29%;
+  text-align: right;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.callout-label {
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.callout-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  color: var(--text);
+}
+
+@media (max-width: 1500px) {
+  .callout { display: none; }
+}
+
+/* ---- footer ---- */
+
+.hud-foot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 26px;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 60px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* ------------------------------------------------------------- COMMS CHAT
+
+   Panel 07. Sits under the dial, between the two instrument columns, and is
+   the only part of the HUD that takes pointer input — .hud itself is
+   pointer-events: none so the dial and the rails never swallow clicks, which
+   means this has to opt back in or it could be neither typed into nor
+   scrolled. */
+
+.comms {
+  /* The right-hand column, opposite the instrument stack: same top line as
+     the panels, run down to the footer, and wider than an instrument
+     column because a conversation needs line length. */
+  position: absolute;
+  top: 150px;
+  right: 60px;
+  bottom: 56px;
+  width: 380px;
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+  text-transform: none;
+  letter-spacing: 0.01em;
+}
+
+.comms .inst-head { flex: none; margin-bottom: 8px; }
+
+.comms-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding-right: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--accent) 45%, transparent) transparent;
+}
+
+.comms-msg {
+  display: grid;
+  grid-template-columns: 62px 1fr;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.comms-who {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.comms-user .comms-who { color: var(--text-dim); }
+.comms-jarvis .comms-who { color: var(--accent); }
+
+.comms-text {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+  /* Long unbroken strings (a URL, a stack trace) must wrap, not widen the
+     panel under the dial. */
+  overflow-wrap: anywhere;
+}
+
+.comms-user .comms-text { opacity: 0.88; }
+
+.comms-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+
+.comms-input::placeholder {
+  color: var(--text-dim);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-size: 10px;
+  opacity: 0.8;
+}
+
+.comms-bar { flex: none; }
+.comms-bar:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
+}
+
+@media (max-width: 1150px) {
+  .comms { left: 50%; right: auto; top: auto; transform: translateX(-50%); width: min(780px, 92vw); height: 34vh; }
+}
+
+/* ---------------------------------------------------------- COMPACT HEIGHT
+   Four instruments in the left stack need about 740px. A laptop browser
+   window under ~950px tall does not have it, and the bottom panel was being
+   clipped. Tighten padding, gaps and the two tallest graphics rather than
+   shrinking anything on screens that have the room. */
+@media (max-height: 950px) {
+  .column { top: 136px; gap: 10px; }
+  .comms { top: 136px; }
+  .inst { padding: 10px 14px 11px; }
+  .inst-head { margin-bottom: 7px; }
+  .inst-body { gap: 7px; }
+  .inst-row { gap: 4px; }
+  .trace { height: 46px; }
+  .ring svg { max-width: 70px; }
+  .rings { padding-top: 0; }
+  .env-temp { font-size: 34px; }
+}

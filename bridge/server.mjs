@@ -712,6 +712,50 @@ let lastCpu = cpuTimes()
 let lastNet = null
 
 /** Windows-only extras. Absent elsewhere, and absent on a desktop with no battery. */
+
+/**
+ * Total bytes across all interfaces since boot.
+ *
+ * netstat is used rather than Get-NetAdapterStatistics because the latter
+ * reads root/StandardCimv2, which the spawned process cannot reach - it
+ * returns nothing and takes the whole reading down with it.
+ */
+/**
+ * GPU core temperature, which on this class of machine is the only sensor
+ * actually exposed - the ACPI thermal zone the CPU would report through is
+ * unimplemented. Absent without an NVIDIA card, and the panel shows a dash.
+ */
+function gpuTemp() {
+  return new Promise((resolve) => {
+    const child = spawn('nvidia-smi',
+      ['--query-gpu=temperature.gpu', '--format=csv,noheader,nounits'],
+      { windowsHide: true })
+    let buf = ''
+    const timer = setTimeout(() => { child.kill(); resolve(null) }, 4000)
+    child.stdout.on('data', (d) => (buf += d))
+    child.on('close', () => {
+      clearTimeout(timer)
+      const n = Number(buf.trim().split(String.fromCharCode(10))[0])
+      resolve(Number.isFinite(n) ? n : null)
+    })
+    child.on('error', () => { clearTimeout(timer); resolve(null) })
+  })
+}
+
+function netBytes() {
+  return new Promise((resolve) => {
+    const child = spawn('netstat', ['-e'], { windowsHide: true })
+    let buf = ''
+    const timer = setTimeout(() => { child.kill(); resolve(null) }, 3000)
+    child.stdout.on('data', (d) => (buf += d))
+    child.on('close', () => {
+      clearTimeout(timer)
+      const m = buf.match(new RegExp('^ *Bytes +([0-9]+) +([0-9]+)', 'm'))
+      resolve(m ? Number(m[1]) + Number(m[2]) : null)
+    })
+    child.on('error', () => { clearTimeout(timer); resolve(null) })
+  })
+}
 async function windowsExtras() {
   if (process.platform !== 'win32') return { battery: null, temp: null, netBytes: null }
   // Passed base64 UTF-16LE rather than as a -Command string: Node's own
@@ -720,28 +764,24 @@ async function windowsExtras() {
   // network counter empty while the simpler statements still worked.
   const ps = [
     '$b = (Get-CimInstance Win32_Battery | Select-Object -First 1).EstimatedChargeRemaining',
-    '$t = (Get-CimInstance -Namespace root/wmi MSAcpi_ThermalZoneTemperature -ErrorAction SilentlyContinue | Select-Object -First 1).CurrentTemperature',
-    '$s = @(Get-NetAdapterStatistics -ErrorAction SilentlyContinue)',
-    '$n = if ($s.Count) { ($s | Measure-Object -Property ReceivedBytes -Sum).Sum + ($s | Measure-Object -Property SentBytes -Sum).Sum } else { $null }',
-    'Write-Output "$b|$t|$n"',
-  ].join("`n")
+    'Write-Output "$b"',
+  ].join('; ')
   const encoded = Buffer.from(ps, 'utf16le').toString('base64')
   const out = await new Promise((resolve) => {
     const child = spawn('powershell.exe',
       ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
       { windowsHide: true })
     let buf = ''
-    const timer = setTimeout(() => { child.kill(); resolve('') }, 4000)
+    const timer = setTimeout(() => { child.kill(); resolve('') }, 8000)
     child.stdout.on('data', (d) => (buf += d))
     child.on('close', () => { clearTimeout(timer); resolve(buf.trim()) })
     child.on('error', () => { clearTimeout(timer); resolve('') })
   })
-  const [b, t, n] = out.split('|').map((s) => s.trim())
+  const b = out.trim()
   return {
     battery: b ? Number(b) : null,
-    // MSAcpi reports tenths of a kelvin.
-    temp: t ? Math.round(Number(t) / 10 - 273.15) : null,
-    netBytes: n ? Number(n) : null,
+    temp: await gpuTemp(),
+    netBytes: await netBytes(),
   }
 }
 
@@ -1164,9 +1204,16 @@ const wss = new WebSocketServer({
     done(true)
   },
 })
-server.listen(PORT)
+// Loopback only. With no host, Node listens on every interface, and the origin
+// check above is no defence against that: a browser cannot forge Origin, but any
+// script on the same Wi-Fi can — and this socket reads the user's mail, calendar
+// and Slack once those are connected. On a machine whose firewall lets Node in
+// on public networks, that meant anyone in the same café. JARVIS_BRIDGE_HOST
+// exists for the rare deliberate exception; leave it unset.
+const HOST = process.env.JARVIS_BRIDGE_HOST || '127.0.0.1'
+server.listen(PORT, HOST)
 
-console.log(`[jarvis] bridge listening on ws://localhost:${PORT}`)
+console.log(`[jarvis] bridge listening on ws://${HOST}:${PORT} (this machine only)`)
 console.log(
   `[jarvis] speech ${elevenKey() ? 'via ElevenLabs (key from MCP config)' : 'using browser fallback voice'}`,
 )

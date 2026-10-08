@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { Scene } from './scene/Scene'
+import { Reactor } from './ui/Reactor'
 import { Hud } from './ui/Hud'
 import { Boot } from './ui/Boot'
 import { Ignition } from './ui/Ignition'
@@ -32,6 +32,7 @@ import {
 import { startAnalyser, micLevel } from './lib/audio'
 import { probeCapabilities } from './lib/capabilities'
 import { env } from './config'
+import { setSubmit } from './lib/submit'
 
 /**
  * The conversation.
@@ -217,6 +218,14 @@ export default function App() {
       }
     }
   }
+
+  // The chat box starts turns through the same function the microphone does,
+  // so a typed line gets the same panels, speech and transcript as a spoken
+  // one. Re-registered every render because respond closes over this render.
+  useEffect(() => {
+    setSubmit(respond)
+    return () => setSubmit(null)
+  })
 
   // -- voice events ---------------------------------------------------------
 
@@ -705,7 +714,11 @@ export default function App() {
 
   return (
     <>
-      <Scene />
+      {/* The vector dial, in place of the 3D scene. scene/ is left intact:
+          nothing about it is wrong, it is simply a different picture — an
+          additive bloom-blown orb where this design wants a hard-edged
+          instrument face. Mount <Scene /> here again to go back. */}
+      <Reactor />
       <Hud />
       <Boot />
       <Diagnostics />
