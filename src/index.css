@@ -2705,3 +2705,189 @@ kbd {
   .rings { padding-top: 0; }
   .env-temp { font-size: 34px; }
 }
+
+/* ---------------------------------------------------------------- SETTINGS
+
+   A modal over the HUD. Like the chat, it has to opt back in to pointer
+   events, since .hud is pointer-events: none throughout. */
+
+.settings-open { margin-left: 0; }
+
+.set-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  pointer-events: auto;
+  background: color-mix(in srgb, #000 45%, transparent);
+  backdrop-filter: blur(3px);
+  text-transform: none;
+  letter-spacing: 0.01em;
+}
+
+.set-panel {
+  width: min(640px, 100%);
+  max-height: min(86vh, 860px);
+  display: flex;
+  flex-direction: column;
+  background: var(--sheet-1);
+  outline: none;
+}
+
+.set-close {
+  margin-left: auto;
+  background: transparent;
+  border: 0;
+  color: var(--text-dim);
+  font-size: 15px;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.set-close:hover { color: var(--text); }
+
+.set-scroll {
+  overflow-y: auto;
+  padding-right: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--accent) 45%, transparent) transparent;
+}
+
+.set-section { display: flex; flex-direction: column; gap: 10px; }
+
+.set-h {
+  margin: 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.set-row {
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.set-row-main { display: flex; align-items: flex-start; gap: 12px; }
+
+.set-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  transform: rotate(45deg);
+  border: 1px solid var(--text-dim);
+}
+.set-connected .set-dot {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 75%, transparent);
+}
+.set-expired .set-dot,
+.set-error .set-dot { background: #ff8a65; border-color: #ff8a65; }
+
+.set-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+
+.set-row-title { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+
+.set-name { font-size: 14px; font-weight: 600; color: var(--text); }
+
+.set-status {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  color: var(--text-dim);
+}
+.set-connected .set-status { color: var(--accent); }
+.set-expired .set-status,
+.set-error .set-status { color: #ff8a65; }
+
+.set-sub { font-size: 12px; color: var(--text-dim); overflow-wrap: anywhere; }
+.set-expiry { opacity: 0.8; }
+
+.set-note { font-size: 11px; color: var(--text-dim); opacity: 0.85; overflow-wrap: anywhere; }
+
+.set-actions { flex: none; display: flex; gap: 8px; align-items: center; }
+
+.set-btn {
+  pointer-events: auto;
+  cursor: pointer;
+  padding: 6px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.set-btn:hover { background: color-mix(in srgb, var(--accent) 26%, transparent); }
+.set-btn:disabled { opacity: 0.45; cursor: default; }
+.set-btn-quiet { background: transparent; border-color: color-mix(in srgb, var(--text) 25%, transparent); color: var(--text-dim); }
+.set-btn-on { background: var(--accent); color: var(--bg-ink, #04112a); }
+:root[data-theme='defa'] .set-btn-on { color: #2c58be; }
+
+.set-busy {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+}
+
+.set-token { display: flex; gap: 8px; }
+
+.set-input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  background: color-mix(in srgb, #000 20%, transparent);
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  outline: none;
+}
+.set-input:focus { border-color: var(--accent); }
+
+.set-error {
+  font-size: 12px;
+  color: #ffb4a2;
+  border-left: 2px solid #ff8a65;
+  padding-left: 8px;
+}
+
+.set-fine { margin: 0; font-size: 11px; color: var(--text-dim); opacity: 0.75; }
+
+.set-themes { display: flex; gap: 8px; }
+
+.set-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text);
+}
+.set-list b { font-weight: 600; }
+
+.set-paths {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  line-height: 1.7;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+.set-path-k { display: inline-block; min-width: 92px; color: var(--accent); }

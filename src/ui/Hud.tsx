@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useStore, accentFor, type Phase } from '../store'
 import { THEMES, THEME_ORDER } from '../theme'
@@ -18,6 +18,7 @@ import {
 } from './Instruments'
 import { ReactorCallouts } from './Reactor'
 import { Comms } from './Comms'
+import { Settings } from './Settings'
 
 const statusText: Record<Phase, string> = {
   offline: 'OFFLINE',
@@ -51,6 +52,7 @@ export function Hud() {
 
   // Polled once here and handed down, so six panels don't open six pollers.
   const { sys, weather, latency } = useInstruments()
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   // accentFor folds JARVIS's overrides in over the phase colour, so one
   // variable on the root carries a theme change into every .hud-* rule without
@@ -95,6 +97,15 @@ export function Hud() {
         >
           <span className="theme-swatch" />
           {THEMES[theme].label}
+        </button>
+
+        <button
+          type="button"
+          className="theme-switch settings-open"
+          onClick={() => setSettingsOpen(true)}
+          title="Settings — connections and privacy"
+        >
+          ⚙ Settings
         </button>
 
         <Clock sys={sys} />
@@ -207,6 +218,8 @@ export function Hud() {
         </div>
       )}
       <GestureGuide live={gestures} />
+
+      {settingsOpen && <Settings onClose={() => setSettingsOpen(false)} />}
 
       <footer className="hud-foot">
         <span>SECURE CHANNEL · LOCAL · {BRIDGE_HTTP_URL.replace(/^https?:\/\//, '')}</span>

@@ -29,6 +29,7 @@ import { readFile, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve as resolvePath } from 'node:path'
 import { openRemote, proxyError, vetTarget, PROXY_UA } from './net.mjs'
 import { probeUrl, renderPage } from './page.mjs'
+import { STORAGE, connectGoogle, connectSlack, disconnect, listIntegrations } from './integrations.mjs'
 
 const PORT = Number(process.env.JARVIS_BRIDGE_PORT ?? 8787)
 
@@ -175,7 +176,9 @@ function configuredServers() {
   }
 }
 
-const MCP_SERVERS = configuredServers()
+// Read per connection, not once at boot, so an account connected from the
+// Settings page is live on the next session without restarting the bridge.
+const MCP_SERVERS = () => configuredServers()
 
 /** MCP tools arrive as `mcp__<server>__<tool>`. */
 const mcpServerOf = (toolName) =>
@@ -893,6 +896,55 @@ const handleRequest = async (req, res) => {
     }
   }
 
+  // The Settings page: which accounts are connected, and connecting or
+  // disconnecting them. Status only ever goes out — account name and expiry,
+  // never a token — and secrets only ever come in, to be written locally.
+  if (req.method === 'GET' && req.url === '/integrations') {
+    res.writeHead(200, { ...cors, 'content-type': 'application/json' })
+    return res.end(JSON.stringify({ items: await listIntegrations(), storage: STORAGE }))
+  }
+
+  if (req.method === 'POST' && (req.url === '/integrations/connect' || req.url === '/integrations/disconnect')) {
+    // These change what JARVIS can reach, so unlike an <img> fetch they must
+    // come from the page itself: no Origin, no service.
+    if (!origin) {
+      res.writeHead(403, cors)
+      return res.end('forbidden')
+    }
+    let body = ''
+    for await (const chunk of req) {
+      body += chunk
+      if (body.length > 16 * 1024) {
+        res.writeHead(413, cors)
+        return res.end('too large')
+      }
+    }
+    let msg
+    try {
+      msg = JSON.parse(body)
+    } catch {
+      res.writeHead(400, cors)
+      return res.end('bad json')
+    }
+    const reply = (status, payload) => {
+      res.writeHead(status, { ...cors, 'content-type': 'application/json' })
+      return res.end(JSON.stringify(payload))
+    }
+    try {
+      if (req.url.endsWith('/disconnect')) {
+        await disconnect(msg.id, reloadSessions)
+        return reply(200, { ok: true })
+      }
+      if (msg.id === 'slack') return reply(200, { ok: true, ...(await connectSlack(msg.token, reloadSessions)) })
+      if (msg.id === 'gmail' || msg.id === 'google-calendar') {
+        return reply(200, { ok: true, ...(await connectGoogle(msg.id, reloadSessions)) })
+      }
+      return reply(400, { ok: false, error: 'unknown integration' })
+    } catch (e) {
+      return reply(e.code === 'needs-setup' ? 409 : 400, { ok: false, error: e.message, code: e.code })
+    }
+  }
+
   // Serve local image files to the page. Screenshots and generated art land on
   // disk as absolute paths, and a page served over http can't read file:// —
   // so the bridge, which can, hands them over.
@@ -1182,6 +1234,16 @@ const server = http.createServer((req, res) => {
   })
 })
 
+/**
+ * After Settings connects or disconnects an account, drop every socket. The
+ * page reconnects on its own, and the new session is built with the new server
+ * list. The cost is that JARVIS forgets the conversation so far, which is why
+ * this only runs on an explicit change and never on a timer.
+ */
+function reloadSessions() {
+  for (const client of wss.clients) client.close(1012, 'connections changed')
+}
+
 const wss = new WebSocketServer({
   server,
   // The handshake is the only place a page can be turned away, so it happens
@@ -1258,7 +1320,7 @@ wss.on('connection', (socket) => {
   // Answer the HUD straight away rather than making it wait for the agent's
   // first turn. Refined later by the real init message.
   socket.send(
-    JSON.stringify({ type: 'ready', servers: Object.keys(MCP_SERVERS) }),
+    JSON.stringify({ type: 'ready', servers: Object.keys(MCP_SERVERS()) }),
   )
 
   /** Resolves the pending user message into the SDK's input generator. */
@@ -1411,7 +1473,7 @@ wss.on('connection', (socket) => {
       // lands on screen directly — which is also why this object is built per
       // connection rather than once.
       mcpServers: {
-        ...MCP_SERVERS,
+        ...MCP_SERVERS(),
         jarvis: displayServer(
           (panel) => send({ type: 'panel', panel }),
           (blade) => send({ type: 'blade', blade }),
