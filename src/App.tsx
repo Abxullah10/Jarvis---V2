@@ -158,6 +158,12 @@ export default function App() {
             // clear the readout while a slow tool was still running.
             store.getState().setActiveTool(null)
             music.working(false)
+            // Bin any filler that has not begun. Measured: on a question he
+            // answers before calling a tool, the first tool event lands after
+            // the first words, so "Searching." was queued behind the answer
+            // and played on top of it. The filler is only worth hearing while
+            // he has nothing to say; the moment he does, it is noise.
+            spk.dropFiller()
             store.getState().pushTurn({ id: turnId, role: 'jarvis', text: '' })
           }
           store.getState().appendToLastTurn(delta)

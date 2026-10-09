@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { THEMES, THEME_ORDER, applyTheme, savedTheme, type ThemeName } from './theme'
+import { clearHistory, loadHistory, saveHistory } from './lib/history'
 
 export type Phase =
   | 'offline'   // waiting for the click that unlocks audio
@@ -280,7 +281,7 @@ export const useStore = create<State>((set) => ({
   phase: 'offline',
   level: 0,
   caption: '',
-  turns: [],
+  turns: loadHistory(),
   activeTool: null,
   error: null,
   connected: [],
@@ -370,13 +371,19 @@ export const useStore = create<State>((set) => ({
   setActiveTool: (activeTool) => set({ activeTool }),
   setError: (error) => set({ error }),
   setConnected: (connected) => set({ connected }),
-  pushTurn: (turn) => set((s) => ({ turns: [...s.turns.slice(-40), turn] })),
+  pushTurn: (turn) =>
+    set((s) => {
+      const turns = [...s.turns.slice(-40), turn]
+      saveHistory(turns)
+      return { turns }
+    }),
   appendToLastTurn: (text) =>
     set((s) => {
       const turns = [...s.turns]
       const last = turns[turns.length - 1]
       if (!last || last.role !== 'jarvis') return {}
       turns[turns.length - 1] = { ...last, text: last.text + text }
+      saveHistory(turns)
       return { turns }
     }),
 
@@ -426,6 +433,9 @@ export const useStore = create<State>((set) => ({
       // screen, and leaving a full-height article standing while the cards
       // around it vanish is the interface arguing with the instruction.
       const blades = what === 'transcript' ? s.blades : []
+      // Clearing the transcript clears what is on disk too, or the next
+      // reload would bring back the conversation the user just dismissed.
+      if (turns.length === 0) clearHistory()
       const cleared = { panels, turns, blades, focusedBlade: null, expandedBlade: null }
       return what === 'all'
         ? { ...cleared, caption: '', activeTool: null }

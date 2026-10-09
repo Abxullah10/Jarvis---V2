@@ -29,7 +29,7 @@ import { readFile, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve as resolvePath } from 'node:path'
 import { openRemote, proxyError, vetTarget, PROXY_UA } from './net.mjs'
 import { probeUrl, renderPage } from './page.mjs'
-import { STORAGE, connectGoogle, connectSlack, disconnect, listIntegrations } from './integrations.mjs'
+import { STORAGE, connectGoogle, connectSlack, disconnect, listIntegrations, todaysEvents } from './integrations.mjs'
 
 const PORT = Number(process.env.JARVIS_BRIDGE_PORT ?? 8787)
 
@@ -438,6 +438,9 @@ Using tools:
   spinner; they don't need commentary.
 - Finding or loading a tool is part of using it, and just as silent. Never say
   you need to fetch, load, find or check your tools first.
+- Every message from the user begins with the current local date and time in
+  square brackets. That is the clock: use it for anything about time or dates,
+  never run a command to find it, and never read the brackets aloud.
 - Never speak a file path, URL, ID or raw JSON aloud unless asked. Summarise.
 - Never append a sources list, citations, or markdown links. Every word you write
   is read out loud, and a URL becomes "aitch tee tee pee colon slash slash".
@@ -547,6 +550,19 @@ async function sttAllowed() {
   }
   sttProbe = { at: Date.now(), key, ok }
   return ok
+}
+
+/** The clock JARVIS reads: "Wednesday 8 October 2026 at 13:52 Gulf Standard Time". */
+function localNow() {
+  return new Date().toLocaleString('en-GB', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZoneName: 'long',
+  })
 }
 
 /**
@@ -962,6 +978,13 @@ const handleRequest = async (req, res) => {
   // The Settings page: which accounts are connected, and connecting or
   // disconnecting them. Status only ever goes out — account name and expiry,
   // never a token — and secrets only ever come in, to be written locally.
+  // Today's agenda for the Schedule panel. Always 200: "no calendar linked"
+  // and "Google signed us out" are states the panel renders, not failures.
+  if (req.method === 'GET' && req.url === '/calendar') {
+    res.writeHead(200, { ...cors, 'content-type': 'application/json' })
+    return res.end(JSON.stringify(await todaysEvents()))
+  }
+
   if (req.method === 'GET' && req.url === '/integrations') {
     res.writeHead(200, { ...cors, 'content-type': 'application/json' })
     return res.end(JSON.stringify({ items: await listIntegrations(), storage: STORAGE }))
@@ -1399,9 +1422,13 @@ wss.on('connection', (socket) => {
           deliver = resolve
         }))
       if (closed || text == null) return
+      // Stamped with the local time as it is delivered. Without it "what time
+      // is it" cost a shell round-trip on high effort and was simply invented
+      // on low — measured both ways — and "remind me at five" or "what's on
+      // this afternoon" had nothing to be relative to.
       yield {
         type: 'user',
-        message: { role: 'user', content: text },
+        message: { role: 'user', content: `[${localNow()}] ${text}` },
         parent_tool_use_id: null,
       }
     }
@@ -1586,6 +1613,10 @@ wss.on('connection', (socket) => {
       effort: EFFORT,
       maxTurns: 24,
       permissionMode: 'default',
+      // Tool search is left on (the default) deliberately. Turning it off to
+      // save the ToolSearch round-trip was measured and was worse: an unread
+      // count took 61 s instead of 13 s, and he told the user Slack was not
+      // connected when it was.
       // Without this the SDK only emits whole assistant messages, and JARVIS
       // would sit silent until the entire answer was written. Partial events
       // are what let speech start on the first finished sentence.

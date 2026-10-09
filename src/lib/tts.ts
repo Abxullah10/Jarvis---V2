@@ -33,6 +33,9 @@ type Speaker = {
   /** Speak a phrase ahead of anything still queued. Used for filler like
    *  "Working on it, sir" while a tool runs. */
   say: (text: string) => void
+  /** Discard filler that has not begun playing. Called the moment his real
+   *  answer arrives, so the answer never waits behind "Searching." */
+  dropFiller: () => void
   /** No more text coming — flush the remainder and resolve when audio ends. */
   end: () => Promise<void>
   /** Cut it off mid-sentence (barge-in). Always settles `end()`. */
@@ -333,6 +336,9 @@ type Item = {
   text: string
   /** Generation starts one sentence ahead, not all at once. */
   audio?: Promise<string | null> | null
+  /** Filler ("Searching.") rather than something he actually means. Only
+   *  worth hearing while he has nothing to say; discarded once he has. */
+  filler?: boolean
 }
 
 export function createSpeaker(): Speaker {
@@ -359,8 +365,12 @@ export function createSpeaker(): Speaker {
     const text = shape(sentence)
     if (!text) return
 
-    const item: Item = { text }
+    const item: Item = { text, filler: priority }
     if (priority) {
+      // Never in front of something he actually means. Filler jumping the
+      // queue is right when he has nothing to say and wrong the instant he
+      // does — it would land between two sentences of his own answer.
+      if (queue.some((q) => !q.filler)) return
       // Genuinely ahead of the queue this time. The old `say()` appended to the
       // same chain and only appeared to preempt because it was called when the
       // queue happened to be empty.
@@ -660,6 +670,14 @@ export function createSpeaker(): Speaker {
   return {
     say(text) {
       enqueue(text, true)
+    },
+    dropFiller() {
+      // Only what is still waiting. A filler already playing is under a second
+      // long and cutting it mid-word sounds like a fault; what must never
+      // happen is the answer queueing behind a filler that has not started.
+      for (let i = queue.length - 1; i >= 0; i--) {
+        if (queue[i].filler) queue.splice(i, 1)
+      }
     },
     push(delta) {
       if (cancelled) return

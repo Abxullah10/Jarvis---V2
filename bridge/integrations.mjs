@@ -166,6 +166,55 @@ async function slackStatus() {
   }
 }
 
+/**
+ * Today's events from the primary calendar, for the Schedule panel.
+ *
+ * Read here rather than through the calendar MCP server because that server
+ * answers JARVIS, not the HUD: the panel needs its own data without spending
+ * a model turn to get it. Same token, same refresh path as the status check.
+ *
+ * Returns { events: [...] } or { error } — never a thrown exception, because
+ * a panel with no calendar should render a dash, not take the HUD down.
+ */
+export async function todaysEvents() {
+  const token = refreshTokenOf(CALENDAR_TOKEN)
+  if (!token) return { error: 'not-connected', events: [] }
+  try {
+    const access = await googleAccessToken(token.refresh_token)
+    // Local midnight to local midnight, so "today" means the user's today and
+    // not UTC's — in Dubai those differ for four hours of every evening.
+    const start = new Date()
+    start.setHours(0, 0, 0, 0)
+    const end = new Date(start)
+    end.setDate(end.getDate() + 1)
+    const params = new URLSearchParams({
+      timeMin: start.toISOString(),
+      timeMax: end.toISOString(),
+      singleEvents: 'true',
+      orderBy: 'startTime',
+      maxResults: '12',
+    })
+    const r = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`,
+      { headers: { authorization: `Bearer ${access}` } },
+    )
+    const j = await r.json()
+    if (!r.ok) return { error: j.error?.message ?? `HTTP ${r.status}`, events: [] }
+    const events = (j.items ?? []).map((e) => ({
+      id: e.id,
+      title: e.summary ?? '(no title)',
+      // An all-day event carries `date`; a timed one carries `dateTime`.
+      start: e.start?.dateTime ?? null,
+      allDay: !e.start?.dateTime,
+      where: e.location ?? '',
+      status: e.status ?? 'confirmed',
+    }))
+    return { events }
+  } catch (e) {
+    return { error: e.expired ? 'expired' : String(e.message), events: [] }
+  }
+}
+
 export async function listIntegrations() {
   const one = async (id, fn) => {
     const hit = cache.get(id)

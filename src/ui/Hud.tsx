@@ -14,6 +14,7 @@ import {
   Environment,
   NeuralActivity,
   Power,
+  Schedule,
   useInstruments,
 } from './Instruments'
 import { ReactorCallouts } from './Reactor'
@@ -51,7 +52,7 @@ export function Hud() {
   const cycleTheme = useStore((s) => s.cycleTheme)
 
   // Polled once here and handed down, so six panels don't open six pollers.
-  const { sys, weather, latency } = useInstruments()
+  const { sys, weather, calendar, latency } = useInstruments()
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   // accentFor folds JARVIS's overrides in over the phase colour, so one
@@ -132,6 +133,7 @@ export function Hud() {
           <NeuralActivity sys={sys} />
           <Power sys={sys} />
           <Environment weather={weather} />
+          <Schedule calendar={calendar} />
         </aside>
       )}
 

@@ -255,10 +255,64 @@ export function Environment({ weather }: { weather: Weather | null }) {
  * those were illustrative, and inventing stand-ins would make a disconnected
  * panel indistinguishable from a working one.
  */
-export function Schedule() {
+export type CalEvent = {
+  id: string
+  title: string
+  start: string | null
+  allDay: boolean
+  where: string
+  status: string
+}
+
+export type Calendar = { events: CalEvent[]; error?: string }
+
+/**
+ * Today's agenda, from the bridge's /calendar endpoint.
+ *
+ * An empty calendar and a broken connection look nothing alike here: "Nothing
+ * today" is an answer, whereas an expired sign-in says so and points at
+ * Settings. A panel that showed the same blank state for both would hide the
+ * one problem the user can actually fix.
+ */
+export function Schedule({ calendar }: { calendar: Calendar | null }) {
+  const events = calendar?.events ?? []
+  const error = calendar?.error
+
+  const label = (e: CalEvent) => {
+    if (e.allDay || !e.start) return 'ALL DAY'
+    return new Date(e.start).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+  }
+
+  // Next up is the first event that has not finished starting yet; it gets the
+  // filled marker so a glance finds it without reading the times.
+  const now = Date.now()
+  const nextIndex = events.findIndex((e) => e.start && new Date(e.start).getTime() >= now)
+
   return (
-    <Panel n="05" title="Schedule" tag="CAL">
-      <p className="inst-empty">No calendar linked. Connect one and the day&apos;s agenda appears here.</p>
+    <Panel n="05" title="Schedule" tag={events.length ? `${events.length} TODAY` : 'CAL'}>
+      {!calendar && <p className="inst-empty">Checking…</p>}
+      {error === 'not-connected' && (
+        <p className="inst-empty">No calendar linked. Connect one in Settings.</p>
+      )}
+      {error === 'expired' && (
+        <p className="inst-empty">Google signed out. Reconnect in Settings.</p>
+      )}
+      {error && error !== 'not-connected' && error !== 'expired' && (
+        <p className="inst-empty">Calendar unavailable: {error}</p>
+      )}
+      {calendar && !error && events.length === 0 && (
+        <p className="inst-empty">Nothing today.</p>
+      )}
+      {events.map((e, i) => (
+        <div key={e.id} className={`cal-row${i === nextIndex ? ' cal-next' : ''}`}>
+          <span className="cal-mark" />
+          <span className="cal-time">{label(e)}</span>
+          <span className="cal-text">
+            <span className="cal-title">{e.title}</span>
+            {e.where && <span className="cal-where">{e.where}</span>}
+          </span>
+        </div>
+      ))}
     </Panel>
   )
 }
@@ -313,5 +367,13 @@ export function Clock({ sys }: { sys: Sys | null }) {
 export function useInstruments() {
   const sys = useJson<Sys>('/sys', 2000)
   const weather = useJson<Weather>('/weather', 15 * 60_000)
-  return { sys: sys.value, weather: weather.value, latency: sys.latency }
+  // Five minutes: an agenda changes when someone sends an invitation, not
+  // second to second, and each poll is a Google API call.
+  const calendar = useJson<Calendar>('/calendar', 5 * 60_000)
+  return {
+    sys: sys.value,
+    weather: weather.value,
+    calendar: calendar.value,
+    latency: sys.latency,
+  }
 }
