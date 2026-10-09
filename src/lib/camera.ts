@@ -44,6 +44,11 @@ export const diag = {
   holders: 0,
   buffered: 0,
   lastError: '',
+  /** What the camera actually granted, not what was requested. Hand tracking
+   *  cannot update more often than this, so it is the ceiling on how smooth
+   *  the hands can possibly be. */
+  cameraFps: 0,
+  cameraSize: '',
 }
 
 if (typeof window !== 'undefined') {
@@ -67,7 +72,17 @@ export async function holdCamera(): Promise<HTMLVideoElement> {
 
   try {
     stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: 1280, height: 720, facingMode: 'user' },
+      video: {
+        width: 1280,
+        height: 720,
+        facingMode: 'user',
+        // Asked for, not required. Hand tracking can only move as often as a
+        // new camera frame arrives, so an unconstrained 30fps stream is both
+        // the choppiness and half the lag — the 1€ filter never gets a sample
+        // to work with between frames. `ideal` degrades quietly on a camera
+        // that cannot do it rather than failing to open at all.
+        frameRate: { ideal: 60 },
+      },
     })
     const el = document.createElement('video')
     el.autoplay = true
@@ -78,6 +93,12 @@ export async function holdCamera(): Promise<HTMLVideoElement> {
     video = el
     diag.open = true
     diag.lastError = ''
+    // What the camera actually agreed to, which is rarely what was asked for.
+    // Without this the only evidence of a 30fps stream is that everything
+    // feels slightly wrong, with nothing on screen to say why.
+    const settings = stream.getVideoTracks()[0]?.getSettings?.()
+    diag.cameraFps = settings?.frameRate ? Math.round(settings.frameRate) : 0
+    diag.cameraSize = settings?.width && settings?.height ? `${settings.width}x${settings.height}` : ''
     return el
   } catch (err) {
     // The hold is given back on failure, or the count drifts up for ever and

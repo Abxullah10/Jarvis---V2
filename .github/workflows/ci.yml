@@ -1,0 +1,62 @@
+name: CI
+
+# Every push and every pull request on main. The point is to find out that a
+# change broke the build from GitHub rather than from the next person to clone
+# it — including you, on the other machine.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 22: package.json asks for >=20, and 22 is the current LTS. The
+      # npm cache keys off package-lock.json, so a run that changes no
+      # dependencies skips the download entirely.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      # `npm ci` rather than `npm install`: it installs exactly what the lock
+      # file pins and fails if the two have drifted, which is the behaviour you
+      # want from a check rather than from a developer machine.
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      # Typecheck and bundle. `npm run build` is already `tsc -b && vite build`,
+      # so this covers both halves of the front end in one step.
+      - name: Typecheck and build
+        run: npm run build
+
+      # The bridge is plain JavaScript, so neither tsc nor the bundler ever
+      # looks at it — a syntax error there would reach you as a server that
+      # refuses to start. node --check parses each file without running it,
+      # which is safe: these modules open cameras and spawn processes on load.
+      - name: Check the bridge parses
+        run: |
+          for f in bridge/*.mjs scripts/*.mjs; do
+            echo "checking $f"
+            node --check "$f"
+          done
+
+      # Secrets live in Windows environment variables and in ~/.gmail-mcp, not
+      # in the repo, and they must stay that way. This fails the build if a key
+      # is ever committed, which is the one mistake that cannot be undone by a
+      # later commit.
+      - name: No committed secrets
+        run: |
+          if git grep -nIE "(sk_[a-zA-Z0-9]{32,}|xox[bp]-[0-9]{8,}-|GOCSPX-[A-Za-z0-9_-]{20,})" -- . ':!.github/workflows/ci.yml'; then
+            echo "::error::A credential appears to be committed. Rotate it, then remove it from the repository."
+            exit 1
+          fi
+          echo "no credentials found in tracked files"

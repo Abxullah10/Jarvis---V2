@@ -24,6 +24,29 @@ import { BONES, INDEX_TIP, THUMB_TIP, TIPS, WRIST, diag, hands } from '../lib/ha
 const GLOW_WIDTH = 7
 const LINE_WIDTH = 2
 
+/**
+ * How quickly the drawn hand catches up to the tracked one, as a time
+ * constant in seconds.
+ *
+ * Tracking updates on camera frames; this canvas redraws on display frames.
+ * At 30fps into a 60Hz screen that is one new position for every two redraws,
+ * so the skeleton sits still and then jumps — choppy however well the 1€
+ * filter is tuned, because the filter has nothing to say between frames.
+ *
+ * Easing the *drawing* fixes that without touching tracking: pinches, presses
+ * and gestures keep using the true filtered position, so nothing becomes less
+ * accurate and no input gains latency. Only the picture is interpolated.
+ *
+ * 12ms is deliberately shorter than a camera frame: the drawn point converges
+ * on the real one well before the next sample lands, so this buys smoothness
+ * for a fraction of a frame of visual delay rather than adding real lag.
+ */
+const EASE_TAU = 0.012
+
+/** Past this, assume re-acquisition rather than movement and snap. A hand
+ *  that was lost and found again must not slide across the screen. */
+const SNAP_DISTANCE = 160
+
 export function Pointer() {
   const canvas = useRef<HTMLCanvasElement>(null)
   const raf = useRef(0)
@@ -76,17 +99,56 @@ export function Pointer() {
       return c || '#19c4c4'
     }
 
-    const draw = () => {
+    /** The drawn position of each hand, per hand id, easing toward the real
+     *  one. Keyed by id so two hands never share a trail. */
+    const drawn = new Map<number, { x: number; y: number }[]>()
+    let lastFrameAt = 0
+
+    const draw = (now = performance.now()) => {
       raf.current = requestAnimationFrame(draw)
       if (!fit()) return
       ctx.clearRect(0, 0, w, h)
-      if (!diag.enabled || !hands.length) return
+
+      // Frame-rate independent easing. A dropped frame or a backgrounded tab
+      // must not change how far the hand moves, only how many steps it takes.
+      const dt = lastFrameAt ? Math.min((now - lastFrameAt) / 1000, 0.1) : 0
+      lastFrameAt = now
+      const k = dt > 0 ? 1 - Math.exp(-dt / EASE_TAU) : 1
+
+      if (!diag.enabled || !hands.length) {
+        drawn.clear()
+        return
+      }
+
+      // Forget hands that are no longer tracked, or the map grows for the life
+      // of the page as ids are handed out.
+      const live = new Set(hands.map((hd) => hd.id))
+      for (const id of [...drawn.keys()]) if (!live.has(id)) drawn.delete(id)
 
       const accent = accentOf()
 
       for (const hand of hands) {
-        const p = hand.points
-        if (!p || p.length < 21) continue
+        const target = hand.points
+        if (!target || target.length < 21) continue
+
+        let p = drawn.get(hand.id)
+        if (!p || p.length !== target.length) {
+          // First sight of this hand: start exactly where it is.
+          p = target.map((q) => ({ x: q.x, y: q.y }))
+          drawn.set(hand.id, p)
+        } else {
+          for (let i = 0; i < target.length; i++) {
+            const dx = target[i].x - p[i].x
+            const dy = target[i].y - p[i].y
+            if (Math.abs(dx) + Math.abs(dy) > SNAP_DISTANCE) {
+              p[i].x = target[i].x
+              p[i].y = target[i].y
+            } else {
+              p[i].x += dx * k
+              p[i].y += dy * k
+            }
+          }
+        }
 
         // Line weight tracks how large the hand is on screen, so a hand held
         // close does not become a bundle of hairlines.
