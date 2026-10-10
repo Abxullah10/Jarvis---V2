@@ -476,6 +476,40 @@ ${text}`
 
 const USER_CONTEXT = userContext()
 
+/**
+ * A blunter restatement of the rules, for models that are not Claude.
+ *
+ * The persona above is written as prose, and prose is a format that assumes
+ * the reader will infer. Claude does. Running the same prompt through Gemini
+ * produced the three failures this fixes, all of them in one answer: it opened
+ * with a spoken self-introduction, printed `**Acknowledging Browser
+ * Unavailability**` as a literal heading into speech, and then reported the
+ * same failure three times in different words — against a prompt that already
+ * said no markdown, two sentences, and say it once.
+ *
+ * Nothing here contradicts the persona; it restates its hardest constraints as
+ * flat imperatives with the failure named, which is the form that survives
+ * translation to another model. Only appended off-Claude so the primary path
+ * keeps the prompt it was tuned with, and does not pay for these tokens.
+ */
+const CROSS_MODEL_GUARD = `
+
+OUTPUT CONTRACT — these override everything above if they ever conflict.
+1. Two sentences maximum. Hard stop. If you need more, you are wrong.
+2. Never write asterisks, underscores, hash marks, bullet points or headings.
+   Your output is read aloud by a speech synthesiser; "**Status**" is spoken as
+   "asterisk asterisk status asterisk asterisk".
+3. Never label or announce your reasoning. No "Acknowledging X", no
+   "Analysis:", no section titles of any kind.
+4. State each fact exactly once. If a tool failed, say so in one sentence and
+   stop. Do not restate it, rephrase it, or summarise it afterwards.
+5. Never introduce yourself or describe what you are. The user knows.
+6. Do not repeat the question back before answering it.`
+
+/** Only Anthropic models get the prose prompt alone; everything else — a local
+ *  proxy, Gemini, whatever JARVIS_MODEL names — gets the contract too. */
+const SYSTEM_SUFFIX = /^claude/i.test(MODEL) ? '' : CROSS_MODEL_GUARD
+
 
 /**
  * ElevenLabs credentials, borrowed from the MCP server config.
@@ -497,6 +531,27 @@ function elevenKey() {
 }
 
 const VOICE_ID = process.env.JARVIS_VOICE_ID ?? 'JBFqnCBsd6RMkjVDRZzb'
+
+/**
+ * VoiceStudio: the same voice, generated on this machine instead of bought.
+ *
+ * It runs a local server speaking OpenAI's speech API, so swapping it in is a
+ * different URL and a profile id rather than a different code path. On a GPU
+ * it renders a sentence in about two seconds — close enough to the cloud that
+ * the difference is not what you notice, and it costs nothing per word, needs
+ * no key, and never sends what the user says off the machine.
+ *
+ * Set JARVIS_VS_VOICE to a profile id to use it. Unset, nothing changes and
+ * ElevenLabs stays in charge, so this is additive: a machine without
+ * VoiceStudio installed behaves exactly as before.
+ *
+ * Profiles are made by cloning a reference recording, which matters because
+ * the engine's *designed* voices all collapse onto one speaker — asking it for
+ * "British male, middle-aged, low" and "…very low" returns the same man. A
+ * clone is the only thing that reliably changes who is talking.
+ */
+const VS_URL = process.env.JARVIS_VS_URL ?? 'http://127.0.0.1:3900'
+const VS_VOICE = process.env.JARVIS_VS_VOICE ?? null
 
 /**
  * Whether the ElevenLabs key may use Speech to Text, found out by asking.
@@ -945,8 +1000,13 @@ const handleRequest = async (req, res) => {
     // leaves the browser's recogniser in charge instead.
     const eleven = Boolean(elevenKey())
     const stt = eleven && (await sttAllowed())
+    // `tts` means "the bridge can speak", not "ElevenLabs is configured" —
+    // the browser reads this to decide whether to use its own voice or ours,
+    // and a local VoiceStudio profile is just as much a voice as a cloud key.
+    // Reported separately from `stt` on purpose: VoiceStudio does speech here,
+    // but transcription still belongs to whatever is configured for it.
     res.writeHead(200, { ...cors, 'content-type': 'application/json' })
-    return res.end(JSON.stringify({ ok: true, tts: eleven, stt }))
+    return res.end(JSON.stringify({ ok: true, tts: eleven || Boolean(VS_VOICE), stt }))
   }
 
   // Live machine telemetry for the DIAGNOSTICS, POWER and ENVIRONMENT panels.
@@ -1152,9 +1212,12 @@ const handleRequest = async (req, res) => {
 
   if (req.method === 'POST' && req.url === '/tts') {
     const key = elevenKey()
-    if (!key) {
+    // Either engine will do, but one of them has to be there. Checked together
+    // so a machine with VoiceStudio and no ElevenLabs key is not turned away
+    // by a test for the key it deliberately does not have.
+    if (!key && !VS_VOICE) {
       res.writeHead(503, cors)
-      return res.end('no elevenlabs key')
+      return res.end('no speech engine configured')
     }
     // A spoken line is a few hundred bytes. Anything approaching this is not a
     // sentence, and buffering it unbounded would let one request eat the heap.
@@ -1185,6 +1248,45 @@ const handleRequest = async (req, res) => {
       res.writeHead(400, cors)
       return res.end('no text')
     }
+    // The local engine, when one is configured. WAV rather than mp3 or opus:
+    // those need an ffmpeg that may not be on the machine, and a failed
+    // conversion costs the whole sentence. The extra bytes never leave
+    // loopback, so the size is not worth a dependency.
+    if (VS_VOICE) {
+      try {
+        const upstream = await fetch(`${VS_URL}/v1/audio/speech`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ input: text, voice: VS_VOICE, response_format: 'wav' }),
+        })
+        if (!upstream.ok) {
+          const detail = (await upstream.text()).slice(0, 300)
+          // Fall through to ElevenLabs when there is a key to fall through to.
+          // A local engine that is merely not running yet should degrade to the
+          // cloud voice rather than leave JARVIS mute.
+          if (!key) {
+            res.writeHead(upstream.status, cors)
+            return res.end(detail)
+          }
+          console.warn(`[jarvis] VoiceStudio said ${upstream.status}, falling back to ElevenLabs`)
+        } else {
+          res.writeHead(200, {
+            ...cors,
+            'content-type': 'audio/wav',
+            'cache-control': 'no-cache',
+          })
+          for await (const chunk of upstream.body) res.write(Buffer.from(chunk))
+          return res.end()
+        }
+      } catch (err) {
+        if (!key) {
+          res.writeHead(502, cors)
+          return res.end(String(err?.message ?? err))
+        }
+        console.warn(`[jarvis] VoiceStudio unreachable (${err?.message}), falling back to ElevenLabs`)
+      }
+    }
+
     try {
       const upstream = await fetch(
         `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}/stream` +
@@ -1363,7 +1465,13 @@ server.listen(PORT, HOST)
 
 console.log(`[jarvis] bridge listening on ws://${HOST}:${PORT} (this machine only)`)
 console.log(
-  `[jarvis] speech ${elevenKey() ? 'via ElevenLabs (key from MCP config)' : 'using browser fallback voice'}`,
+  `[jarvis] speech ${
+    VS_VOICE
+      ? `via VoiceStudio (local, profile ${VS_VOICE})`
+      : elevenKey()
+        ? 'via ElevenLabs (key from MCP config)'
+        : 'using browser fallback voice'
+  }`,
 )
 console.log(`[jarvis] model ${MODEL} · effort ${EFFORT}`)
 console.log(
@@ -1584,7 +1692,7 @@ wss.on('connection', (socket) => {
       // tuned for a coding agent — verbose, file-oriented, and a large chunk
       // of input tokens on every turn. Replacing it makes the persona stick,
       // keeps answers short enough to speak, and cuts cost per turn.
-      systemPrompt: SYSTEM_PROMPT + USER_CONTEXT,
+      systemPrompt: SYSTEM_PROMPT + USER_CONTEXT + SYSTEM_SUFFIX,
       // Run from the home directory so project-scoped MCP servers don't shadow
       // the global ones, and so file tools have a sane root.
       cwd: homedir(),

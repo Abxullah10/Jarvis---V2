@@ -238,12 +238,34 @@ Everything is optional in bridge mode. Frontend settings live in `.env.local`
 
 | Variable | Effect |
 |---|---|
-| `VITE_BACKEND` | `bridge` (default) or `direct` |
+| `VITE_BACKEND` | `bridge` (default), `direct`, or `gemini` |
 | `VITE_BRIDGE_URL` | Where to reach the bridge |
 | `VITE_TTS_ENGINE` | `system` or `kokoro` |
 | `VITE_KOKORO_VOICE` | Voice for the Kokoro engine |
 | `VITE_USE_ELEVENLABS` | Force the ElevenLabs voice on |
 | `VITE_ANTHROPIC_API_KEY` | Direct mode only |
+| `VITE_GEMINI_API_KEY` | Gemini mode only |
+| `VITE_GEMINI_MODEL` | Gemini model id (default `gemini-3.8-flash`) |
+| `VITE_GEMINI_THINKING` | `minimal`, `low` (default), `medium`, `high` |
+
+### Running JARVIS on Gemini
+
+```bash
+echo "VITE_BACKEND=gemini"                   >> .env.local
+echo "VITE_GEMINI_API_KEY=your-key-here"     >> .env.local
+npm run dev
+```
+
+No bridge process. The browser talks to Google's Interactions API directly:
+Google Search handles grounding, and the `MCP_SERVERS` block in
+[`src/config.ts`](src/config.ts) works unchanged — Google dials those endpoints
+from its own infrastructure, same as Anthropic does on the direct path. Get a
+free key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
+
+The usual direct-mode caveat applies: the key is inlined into the bundle, so
+this is for a local demo, not a public deploy. Panels, blades and the `ui_*`
+theme tools stay bridge-only — they need a socket a server can push down
+mid-turn, which no browser-side backend has.
 
 ### Adding an ElevenLabs key
 

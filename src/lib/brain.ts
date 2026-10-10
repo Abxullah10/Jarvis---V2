@@ -1,5 +1,6 @@
 import { BACKEND } from '../config'
 import * as direct from './anthropic'
+import * as gemini from './gemini'
 import * as bridge from './bridge'
 import type { AskHandlers, Msg } from './anthropic'
 import type { Blade, Panel } from '../store'
@@ -8,8 +9,8 @@ export type { AskHandlers, Msg }
 export type { ConnectionState } from './bridge'
 
 /**
- * Picks the brain. Both backends answer a question and stream text and tool
- * events back; they differ in where they run and what they can reach.
+ * Picks the brain. All three backends answer a question and stream text and
+ * tool events back; they differ in where they run and what they can reach.
  *
  *   bridge — a local Node process running the Claude Agent SDK. Uses your
  *            existing Claude Code login, so no API key, and every MCP server
@@ -18,12 +19,20 @@ export type { ConnectionState } from './bridge'
  *   direct — the browser calls the Claude API itself. No process to run and it
  *            deploys as a static site, but it needs an API key in the bundle
  *            and can only use remote HTTP MCP servers.
+ *
+ *   gemini — the browser calls Google's Gemini API itself. Same shape as
+ *            direct, down to sharing the MCP server list: a different model
+ *            behind the same voice.
  */
 
 export const usingBridge = BACKEND === 'bridge'
 
+/** The browser-side brains, which differ from the bridge in every way that
+ *  matters here — no socket, no mid-turn pushes, and history is ours to keep. */
+const local = BACKEND === 'gemini' ? gemini : direct
+
 /** Conversation state lives in the bridge session, so history is only threaded
- *  through on the direct path. */
+ *  through on the browser-side paths. */
 export async function ask(
   prompt: string,
   history: Msg[],
@@ -31,7 +40,7 @@ export async function ask(
 ): Promise<{ text: string; tools: string[] }> {
   return usingBridge
     ? bridge.ask(prompt, handlers)
-    : direct.ask([...history, { role: 'user', content: prompt }], handlers)
+    : local.ask([...history, { role: 'user', content: prompt }], handlers)
 }
 
 export async function warm(): Promise<void> {
@@ -92,7 +101,7 @@ export function watchCapture(
  */
 export function cancel(): void {
   if (usingBridge) bridge.cancel()
-  else direct.cancel()
+  else local.cancel()
 }
 
 /** The older name for `cancel()`. */
@@ -127,5 +136,5 @@ export function watchConnection(
 
 /** Labels for the HUD's SYSTEMS rail. */
 export function connectedLabels(): string[] {
-  return usingBridge ? bridge.bridgeServers() : direct.connectedLabels()
+  return usingBridge ? bridge.bridgeServers() : local.connectedLabels()
 }

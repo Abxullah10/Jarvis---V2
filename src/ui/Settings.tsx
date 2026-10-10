@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { BRIDGE_HTTP_URL } from '../config'
+import { BACKEND, BRIDGE_HTTP_URL } from '../config'
 import { useStore } from '../store'
 import { THEMES, THEME_ORDER } from '../theme'
 
@@ -300,7 +300,8 @@ export function Settings({ onClose }: { onClose: () => void }) {
               </li>
               <li>
                 <b>What does leave the laptop:</b> when you ask about your mail, calendar or Slack, the parts needed
-                to answer are sent to Claude (Anthropic), and his spoken replies are sent to ElevenLabs to be voiced.
+                to answer are sent to {BACKEND === 'gemini' ? 'Gemini (Google)' : 'Claude (Anthropic)'}, and his
+                spoken replies are sent to ElevenLabs to be voiced.
                 Nothing is sent until you ask.
               </li>
               <li>

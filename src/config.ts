@@ -57,11 +57,16 @@ function flag(name: string, raw: unknown, fallback: boolean): boolean {
  *   'direct' — the browser calls the Claude API itself. Nothing to run and it
  *              deploys as a static site, but it needs VITE_ANTHROPIC_API_KEY in
  *              the bundle and only reaches remote HTTP MCP servers.
+ *
+ *   'gemini' — the browser calls Google's Gemini API itself. Same trade as
+ *              'direct' and the same MCP_SERVERS block below, with
+ *              VITE_GEMINI_API_KEY instead and Google Search for grounding in
+ *              place of Anthropic's hosted web search.
  */
-export const BACKEND: 'bridge' | 'direct' = choice(
+export const BACKEND: 'bridge' | 'direct' | 'gemini' = choice(
   'VITE_BACKEND',
   import.meta.env.VITE_BACKEND,
-  ['bridge', 'direct'] as const,
+  ['bridge', 'direct', 'gemini'] as const,
   'bridge',
 )
 
@@ -130,6 +135,7 @@ export const KOKORO_VOICE = choice(
 
 export const env = {
   anthropicKey: str(import.meta.env.VITE_ANTHROPIC_API_KEY) ?? '',
+  geminiKey: str(import.meta.env.VITE_GEMINI_API_KEY) ?? '',
   elevenKey: str(import.meta.env.VITE_ELEVENLABS_API_KEY) ?? '',
   elevenVoiceId:
     str(import.meta.env.VITE_ELEVENLABS_VOICE_ID) ?? 'JBFqnCBsd6RMkjVDRZzb',
@@ -146,6 +152,35 @@ export const MODEL = 'claude-opus-5'
  * For a recorded demo the snappiness is worth it; flip to false to save money.
  */
 export const FAST_MODE = true
+
+/**
+ * The Gemini model, used when VITE_BACKEND=gemini.
+ *
+ * `gemini-3.8-flash` is the current stable Flash and the right default for a
+ * voice assistant — the thing you notice in a spoken answer is latency, not the
+ * last few points of reasoning. Swap in a Pro model via VITE_GEMINI_MODEL if
+ * you want depth over pace. Deliberately a free-form string rather than a fixed
+ * list: Google retires and renames these faster than this file gets edited, and
+ * `curl -H "x-goog-api-key: $KEY"
+ * https://generativelanguage.googleapis.com/v1beta/models` is the only
+ * authority on what your key can actually reach today.
+ */
+export const GEMINI_MODEL =
+  str(import.meta.env.VITE_GEMINI_MODEL) ?? 'gemini-3.8-flash'
+
+/**
+ * How hard Gemini thinks before answering. Low by default for the same reason
+ * the Claude path pins effort low — a spoken reply under sixty words rarely
+ * earns a long deliberation, and every token of it is silence on the speaker.
+ * Note that 'minimal' is not the same as off: some thinking is what keeps tool
+ * calls in real tool steps rather than narrated into the text JARVIS speaks.
+ */
+export const GEMINI_THINKING = choice(
+  'VITE_GEMINI_THINKING',
+  import.meta.env.VITE_GEMINI_THINKING,
+  ['minimal', 'low', 'medium', 'high'] as const,
+  'low',
+)
 
 /**
  * Wake-word engine.

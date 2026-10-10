@@ -31,7 +31,7 @@ import {
 } from './lib/brain'
 import { startAnalyser, micLevel } from './lib/audio'
 import { probeCapabilities } from './lib/capabilities'
-import { env } from './config'
+import { env, BACKEND } from './config'
 import { setSubmit } from './lib/submit'
 
 /**
@@ -372,7 +372,10 @@ export default function App() {
     // reason as the rest of the audio.
     music.enable()
     music.playBoot()
-    music.startAmbient()
+    // No ambient bed. The looping room tone sits under every exchange, and
+    // against a synthesised voice it reads as a problem with the audio rather
+    // than as atmosphere — you hear it, not the answer. The boot sting stays:
+    // it fires once, lands, and gets out of the way.
 
     s.setPhase('boot')
 
@@ -478,9 +481,15 @@ export default function App() {
     })
     const warming = warm().catch((err: Error) => s.setError(err.message))
 
-    if (!usingBridge && !env.anthropicKey) {
+    // Each browser-side brain carries its own key, and a missing one is the
+    // single most likely reason a fresh checkout comes up mute.
+    if (BACKEND === 'direct' && !env.anthropicKey) {
       s.setError(
         'No Anthropic API key — copy .env.example to .env.local and set VITE_ANTHROPIC_API_KEY.',
+      )
+    } else if (BACKEND === 'gemini' && !env.geminiKey) {
+      s.setError(
+        'No Gemini API key — copy .env.example to .env.local and set VITE_GEMINI_API_KEY.',
       )
     }
 

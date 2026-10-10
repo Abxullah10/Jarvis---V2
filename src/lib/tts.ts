@@ -49,12 +49,30 @@ type Speaker = {
 // ---------------------------------------------------------------------------
 
 let speaking = ''
-let recent = ''
-let recentUntil = 0
+/**
+ * Everything said in the last few seconds, not just the last sentence.
+ *
+ * This was a single slot holding one sentence for 1.8s, which was enough
+ * against a streaming cloud voice. It is not enough against a local engine:
+ * VoiceStudio renders a sentence in one to two seconds and plays it as a whole
+ * file, so by the time the microphone's own recogniser returns text for
+ * sentence one, the slot has already been overwritten by sentence two and the
+ * echo no longer matches anything. It then arrives as a new user turn, which
+ * cancels the answer mid-word — the "it stops in the middle of a sentence" and
+ * "it replies when I said nothing" symptoms are both this.
+ *
+ * A window costs nothing and closes the whole class of failure.
+ */
+let spoken: { text: string; until: number }[] = []
 
 /** Recognition lags the speakers by a few hundred milliseconds, so a sentence
- *  keeps arriving at the microphone well after it has finished playing. */
-const ECHO_TAIL_MS = 1800
+ *  keeps arriving at the microphone well after it has finished playing. Held
+ *  for several seconds rather than one, because the browser's recogniser
+ *  batches: it can return a whole phrase from the start of an answer after the
+ *  answer has finished. Over-holding is cheap — the worst case is that a
+ *  genuine question reusing the assistant's own words is ignored once — while
+ *  under-holding lets every echo through as a fresh turn. */
+const ECHO_TAIL_MS = 8000
 
 /**
  * Why you cannot hear him.
@@ -121,8 +139,9 @@ function setSpeaking(text: string) {
     return
   }
   if (speaking) {
-    recent = speaking
-    recentUntil = Date.now() + ECHO_TAIL_MS
+    const now = Date.now()
+    spoken = spoken.filter((s) => s.until > now) // drop what can no longer be heard
+    spoken.push({ text: speaking, until: now + ECHO_TAIL_MS })
   }
   speaking = ''
 }
@@ -137,8 +156,9 @@ function setSpeaking(text: string) {
  * one lands. See `isEcho` in voice.ts.
  */
 export function speakingNow(): string {
-  const tail = Date.now() < recentUntil ? recent : ''
-  return `${speaking} ${tail}`.trim()
+  const now = Date.now()
+  const tail = spoken.filter((s) => s.until > now).map((s) => s.text)
+  return [speaking, ...tail].filter(Boolean).join(' ').trim()
 }
 
 // ---------------------------------------------------------------------------
