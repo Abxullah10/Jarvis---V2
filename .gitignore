@@ -29,3 +29,15 @@ public/mediapipe/
 # local editor/patch backups
 *.bak
 
+
+# Packaged desktop app. electron-builder writes a ~330MB installer and a
+# 235MB unpacked tree here on every build; GitHub refuses any blob over
+# 100MB, so committing this makes the repo unpushable rather than merely
+# large. Build it with `npm run app:dist` instead of cloning it.
+release/
+
+# Staging folder for handing the installer to someone else.
+share/
+
+# Local archives.
+*.zip

@@ -17,7 +17,11 @@
     "bridge": "node bridge/server.mjs",
     "bridge:writes": "JARVIS_ALLOW_WRITES=1 node bridge/server.mjs",
     "setup": "node scripts/setup.mjs",
-    "probe:gemini": "node probe-gemini.mjs"
+    "probe:gemini": "node probe-gemini.mjs",
+    "app": "npm run build && electron .",
+    "app:dev": "electron .",
+    "app:pack": "npm run build && electron-builder --win --dir",
+    "app:dist": "npm run build && electron-builder --win"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.220",
@@ -46,10 +50,40 @@
     "@types/three": "^0.185.3",
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^6.0.4",
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3",
     "oxlint": "^1.75.0",
     "tsx": "^4.23.1",
     "typescript": "~6.0.2",
     "vite": "^8.2.0"
+  },
+  "main": "electron/main.cjs",
+  "build": {
+    "appId": "dev.jarvis.desktop",
+    "productName": "JARVIS",
+    "files": [
+      "dist/**",
+      "electron/**",
+      "bridge/**",
+      "package.json"
+    ],
+    "extraMetadata": {
+      "main": "electron/main.cjs"
+    },
+    "asar": false,
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    }
   }
 }
-

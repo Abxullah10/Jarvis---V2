@@ -370,8 +370,9 @@ export default function App() {
     sfx.play('boot')
     // The score. Must be started from inside this click handler for the same
     // reason as the rest of the audio.
+    // Unlocks audio and warms the files. Must happen inside the click handler;
+    // the boot line itself is played at the end of the sequence, not here.
     music.enable()
-    music.playBoot()
     // No ambient bed. The looping room tone sits under every exchange, and
     // against a synthesised voice it reads as a problem with the audio rather
     // than as atmosphere — you hear it, not the answer. The boot sting stays:
@@ -516,6 +517,19 @@ export default function App() {
     // interface takes over. Kept a touch under the boot cue so the music is
     // still rising as the reactor lands.
     await new Promise((r) => setTimeout(r, 9200)) // boot sequence
+
+    /**
+     * The spoken line lands here, not at ignition.
+     *
+     * It used to play from the click handler, which was right when the file
+     * was a fourteen-second musical swell meant to rise *under* the sequence.
+     * It is now four words, and four words spoken over a nine-second animation
+     * are gone before the first ring has finished drawing — they announce
+     * nothing, because nothing has happened yet. "Systems online" is a report
+     * on a completed start-up, so it belongs at the end of one.
+     */
+    music.playBoot()
+
     await warming
     store.getState().setConnected(connectedLabels())
     store.getState().setVoice(currentVoiceName())

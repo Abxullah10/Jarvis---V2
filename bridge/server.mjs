@@ -555,6 +555,18 @@ const VS_URL = process.env.JARVIS_VS_URL ?? 'http://127.0.0.1:3900'
 const VS_VOICE = process.env.JARVIS_VS_VOICE ?? null
 
 /**
+ * Transcribe through VoiceStudio as well as speak through it.
+ *
+ * On by default wherever VoiceStudio is reachable, because the alternative is
+ * not ElevenLabs — it is the browser's own recogniser, which does not work in
+ * the desktop app at all. Set JARVIS_VS_STT=0 to force the old path.
+ *
+ * The ASR model ships in the same Balanced pack as the voice, so a machine
+ * that can speak can almost always listen too.
+ */
+const VS_STT = process.env.JARVIS_VS_STT !== '0'
+
+/**
  * Whether the ElevenLabs key may use Speech to Text, found out by asking.
  *
  * Sends half a second of silence to Scribe. A 401 or 403 means no; anything
@@ -1000,7 +1012,24 @@ const handleRequest = async (req, res) => {
     // transcription flag is a tested capability, and a key that cannot do it
     // leaves the browser's recogniser in charge instead.
     const eleven = Boolean(elevenKey())
-    const stt = eleven && (await sttAllowed())
+    /**
+     * Can anything transcribe? Asked of VoiceStudio by trying it, not by
+     * trusting a flag: the browser only abandons its own recogniser when this
+     * says yes, and promising a transcriber that is not actually up would
+     * leave JARVIS deaf with no fallback.
+     */
+    let localStt = false
+    if (VS_STT) {
+      try {
+        const r = await fetch(`${VS_URL}/.well-known/voicestudio-speech`, {
+          signal: AbortSignal.timeout(2000),
+        })
+        localStt = r.ok
+      } catch {
+        localStt = false
+      }
+    }
+    const stt = localStt || (eleven && (await sttAllowed()))
     // `tts` means "the bridge can speak", not "ElevenLabs is configured" —
     // the browser reads this to decide whether to use its own voice or ours,
     // and a local VoiceStudio profile is just as much a voice as a cloud key.
@@ -1376,9 +1405,11 @@ const handleRequest = async (req, res) => {
   // touches this endpoint; this is only for the words.
   if (req.method === 'POST' && req.url === '/stt') {
     const key = elevenKey()
-    if (!key) {
+    // Either transcriber will do. Checked together so a machine running
+    // VoiceStudio and holding no ElevenLabs key is not turned away.
+    if (!key && !VS_STT) {
       res.writeHead(503, cors)
-      return res.end('no elevenlabs key')
+      return res.end('no transcriber configured')
     }
 
     const type = req.headers['content-type'] || 'audio/webm'
@@ -1405,6 +1436,55 @@ const handleRequest = async (req, res) => {
     if (size < 1200) {
       res.writeHead(200, { ...cors, 'content-type': 'application/json' })
       return res.end(JSON.stringify({ text: '' }))
+    }
+
+    /**
+     * Transcribe locally, when VoiceStudio is there to do it.
+     *
+     * This is not only a way to avoid paying for Scribe. The browser's own
+     * SpeechRecognition — the fallback when no transcriber is configured —
+     * relies on a speech service that official Chrome builds are keyed for and
+     * Electron's are not, so inside the desktop app it fails silently: the
+     * microphone opens, the indicator lights, and nothing is ever transcribed.
+     * Routing audio through here is what makes the packaged app able to hear
+     * at all.
+     *
+     * It also fixes the echo. The browser gives SpeechRecognition its own
+     * capture, which we cannot apply echo cancellation to, so JARVIS kept
+     * hearing himself and treating it as a barge-in. This path uses the
+     * app's own stream, where echoCancellation is on.
+     */
+    if (VS_STT) {
+      try {
+        const ext = type.includes('ogg') ? 'ogg'
+          : type.includes('mp4') || type.includes('mpeg') ? 'mp4'
+            : type.includes('wav') ? 'wav' : 'webm'
+        const form = new FormData()
+        form.append('model', 'whisper-1')
+        form.append('file', new Blob([Buffer.concat(chunks)], { type }), `speech.${ext}`)
+        const upstream = await fetch(`${VS_URL}/v1/audio/transcriptions`, {
+          method: 'POST',
+          body: form,
+        })
+        if (upstream.ok) {
+          const data = await upstream.json()
+          res.writeHead(200, { ...cors, 'content-type': 'application/json' })
+          return res.end(JSON.stringify({ text: (data.text ?? '').trim() }))
+        }
+        // Fall through to Scribe when there is a key to fall through to;
+        // a local transcriber that is merely not up should not cost the turn.
+        if (!key) {
+          res.writeHead(upstream.status, cors)
+          return res.end((await upstream.text()).slice(0, 300))
+        }
+        console.warn(`[jarvis] VoiceStudio STT said ${upstream.status}, falling back to Scribe`)
+      } catch (err) {
+        if (!key) {
+          res.writeHead(502, cors)
+          return res.end(String(err?.message ?? err))
+        }
+        console.warn(`[jarvis] VoiceStudio STT unreachable (${err?.message}), falling back to Scribe`)
+      }
     }
 
     try {

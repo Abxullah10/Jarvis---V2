@@ -183,6 +183,17 @@ export function playBoot() {
   if (dissolve) clearTimeout(dissolve)
   const arm = () => {
     const secs = Number.isFinite(t.el.duration) && t.el.duration > 1 ? t.el.duration : 17
+    /**
+     * A clip shorter than the fade does not get one.
+     *
+     * The arithmetic below assumes a long musical swell with a tail to spare.
+     * Against a short spoken line it inverts: a 1.5-second "Systems online,
+     * sir." gives (1.5 - 2.6) seconds, which the floor turns into a fade
+     * starting 500ms in — the line is pulled down while it is still saying
+     * its first word. Words are not a swell; they either finish or they are
+     * cut off. So anything this short is simply left to play out.
+     */
+    if (secs < 4) return
     // Start the fade far enough from the end that it is a dissolve rather than
     // a cut, and never sooner than half a second in.
     const at = Math.max(500, (secs - 2.6) * 1000)
