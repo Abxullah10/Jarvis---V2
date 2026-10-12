@@ -215,6 +215,70 @@ then the triangular arc reactor lighting up — with a start-up sound under it
 
 ---
 
+## The desktop app
+
+JARVIS also builds as an installed Windows application — own window, own icon,
+Start menu entry, no terminal.
+
+```bash
+npm run app        # build the UI and run the app from source
+npm run app:dist   # build an installer into release/
+```
+
+The installer is `release/JARVIS Setup <version>.exe`. It is unsigned, so
+SmartScreen warns, and a machine with **Smart App Control** on refuses it
+outright with no override — and turning that off is permanent until Windows is
+reinstalled. Worth knowing before handing the installer to anyone else.
+
+[`electron/main.cjs`](electron/main.cjs) is the whole shell. It:
+
+- serves `dist/` over a loopback HTTP server rather than `file://`, because on
+  `file://` the page's origin is `null` and the bridge rejects the socket;
+- passes that server's port to the bridge as `JARVIS_ALLOWED_ORIGINS`, which is
+  why the server binds *before* the bridge is spawned;
+- spawns the bridge itself with `ELECTRON_RUN_AS_NODE=1`, so the packaged app
+  needs no separate Node install, and kills the process tree on quit;
+- starts VoiceStudio and the LiteLLM proxy if they are not already running, and
+  waits for them;
+- grants microphone and camera access, which Electron otherwise denies with no
+  way for the page to ask;
+- logs to `%APPDATA%\JARVIS\jarvis.log`. **Read that first when something is
+  wrong** — it records what started, what did not, and why.
+
+Three things that are easy to get wrong here, all of them learned the hard way:
+
+- **`asar: false` is deliberate.** Packed into an archive, the bridge cannot be
+  spawned: an asar is not a directory, so it cannot be a working directory and
+  real `node_modules` cannot be resolved from it. The failure surfaces as
+  `spawn …\JARVIS.exe ENOENT`, which names the executable and means the cwd.
+- **Never write to `process.stdout` from the main process.** Launched from a
+  shortcut there is no console, so every write throws `EPIPE`, and an uncaught
+  `EPIPE` is shown to the user as a crash dialog — one per log line.
+- **The app does not contain VoiceStudio or the proxy.** It starts them; it
+  cannot ship them. Without the proxy there is no brain and nothing works;
+  without VoiceStudio the voice falls back to the system one and everything
+  else is fine. The launch dialog distinguishes the two.
+
+### Setting it up on another machine
+
+The installer carries the UI and the bridge. Everything else is per-machine:
+
+| Needed | Why |
+|---|---|
+| A billing-enabled Google Cloud project, and `gcloud auth application-default login` | The brain. Nothing works without it. |
+| `litellm` in a venv, plus `google-auth` | The translation proxy |
+| VoiceStudio + the Balanced model pack | Voice and transcription; optional but it is the difference between JARVIS and a satnav |
+| A **cloned voice profile**, made on that machine | Profile ids are local rows; they do not copy across |
+| `~/.claude.json` | Where the bridge reads MCP servers from |
+
+To share a Google Cloud project rather than an account, add the person at
+**IAM & Admin → Grant access** with `roles/aiplatform.user` *and*
+`roles/serviceusage.serviceUsageConsumer` — the second is easy to miss and
+nothing works without it. Never share account credentials; set a budget alert
+first, because access is project-wide with no per-person cap.
+
+---
+
 ## Configuration
 
 Everything is optional in bridge mode. Frontend settings live in `.env.local`
@@ -233,6 +297,11 @@ Everything is optional in bridge mode. Frontend settings live in `.env.local`
 | `JARVIS_FILE_ROOTS` | — | Roots the `/file` endpoint may serve from |
 | `JARVIS_VOICE_ID` | — | ElevenLabs voice id |
 | `ELEVENLABS_API_KEY` | — | Optional; enables the ElevenLabs voice + Scribe |
+| `JARVIS_VS_URL` | `http://127.0.0.1:3900` | Where VoiceStudio is listening |
+| `JARVIS_VS_VOICE` | — | VoiceStudio profile id; set it and the voice goes local |
+| `JARVIS_VS_STT` | on | `0` forces transcription back off VoiceStudio |
+| `ANTHROPIC_BASE_URL` | — | Point the agent SDK at a proxy instead of Anthropic |
+| `ANTHROPIC_AUTH_TOKEN` | — | Token that proxy expects |
 
 ### Frontend (`.env.local`)
 
@@ -278,6 +347,88 @@ You do not have to touch a flag. Either:
 Either way, `/health` starts reporting the capability, the browser picks it up on
 the next boot, and both the voice and transcription upgrade automatically.
 
+### VoiceStudio: the voice and the ears, locally
+
+[VoiceStudio](https://github.com/debpalash/VoiceStudio) runs speech synthesis and
+transcription on your own GPU. It costs nothing per word, needs no key, and
+nothing you say leaves the machine. Install it, let it fetch the **Balanced**
+model pack, then clone a voice from a reference recording and give the bridge
+its profile id:
+
+```bash
+curl http://127.0.0.1:3900/profiles          # find your profile's id
+JARVIS_VS_VOICE=<profile-id> npm start
+```
+
+The bridge then serves `/tts` from VoiceStudio instead of ElevenLabs, and
+`/stt` too. Both fall back to ElevenLabs if a key is present and VoiceStudio is
+unreachable, so a stopped VoiceStudio costs quality rather than the turn.
+
+**Clone a voice; do not design one.** VoiceStudio will also build a voice from a
+written description, and it is not worth the time: asking for *"British male,
+middle-aged, low pitch"* and then *"very low"* returns the same speaker both
+times. Measured across seven generated voices the median pitch sat between 85
+and 103 Hz — one man. Three clones of real recordings came out at 121, 129 and
+141 Hz. Only a reference recording changes who is speaking.
+
+**Transcription is the part that matters most in the desktop app.** The browser's
+own `SpeechRecognition` depends on a speech service that official Chrome builds
+carry keys for and Electron's do not, so inside the packaged app it fails
+silently — the microphone opens, the indicator lights, and nothing is ever
+transcribed. Routing `/stt` through VoiceStudio is what lets the app hear at
+all. It also fixes JARVIS interrupting himself: the browser gives
+`SpeechRecognition` its own capture that no echo cancellation can be applied
+to, whereas this path uses the app's own stream, where it is on.
+
+### Running the bridge on Gemini
+
+This is distinct from `VITE_BACKEND=gemini` above. That path drops the bridge
+and with it every local tool; this one keeps all of them and swaps only the
+model, by putting a translation proxy in front of the Agent SDK — which speaks
+the Anthropic wire format and nothing else.
+
+```bash
+pip install "litellm[proxy]" google-auth google-cloud-aiplatform
+litellm --config ~/.jarvis/litellm.yaml --port 4000 --host 127.0.0.1
+```
+
+```yaml
+# ~/.jarvis/litellm.yaml
+model_list:
+  - model_name: jarvis-brain
+    litellm_params:
+      model: vertex_ai/gemini-2.5-flash
+      vertex_project: your-project-id
+      vertex_location: us-central1
+      reasoning_effort: disable   # Pro-style thinking is too slow to talk to
+litellm_settings:
+  drop_params: true               # discard `effort` and other Anthropic-only params
+general_settings:
+  master_key: sk-jarvis-local
+```
+
+```bash
+ANTHROPIC_BASE_URL=http://127.0.0.1:4000 \
+ANTHROPIC_AUTH_TOKEN=sk-jarvis-local \
+JARVIS_MODEL=jarvis-brain \
+npm start
+```
+
+Authentication is Application Default Credentials (`gcloud auth
+application-default login`), not an API key — tick every box on the consent
+screen or it fails with `cloud-platform scope is required but not consented`.
+Install `google-auth` explicitly: `litellm[proxy]` omits it, and without it the
+proxy starts and then fails every request with `No module named 'google'`,
+which reads like a credentials fault and is not.
+
+Expect roughly 3.5s to the first spoken sentence, against about 1.2s for the
+local voice to render it — the model is the slow part, not the speech. A
+non-Anthropic model also picks up `CROSS_MODEL_GUARD` in
+`bridge/server.mjs`: the persona is written as prose, which Claude infers from
+and Gemini does not, so the hardest constraints are restated as flat
+imperatives. Without it Gemini introduces itself, prints `**headings**` into
+speech, and reports the same tool failure three times in one answer.
+
 ---
 
 ## Enabling actions
@@ -311,7 +462,27 @@ Press **T** for a one-line audio self-test.
 window** (not an embedded preview), and you must have **allowed the microphone**.
 
 **Bridge not reachable.** Check that `npm run bridge` is still running in its
-terminal, and that nothing else is holding port `8787`.
+terminal, and that nothing else is holding port `8787`. In the desktop app, this
+usually means the page is on an origin the bridge refuses — it accepts
+`localhost:5173-5199` and `4173-4199`, and anything else must be named in
+`JARVIS_ALLOWED_ORIGINS`. The error message on screen tells you which port it is.
+
+**He hears nothing in the desktop app, but worked in the browser.** Expected
+without a configured transcriber: Electron cannot use the browser's
+`SpeechRecognition`. Set up VoiceStudio or an ElevenLabs key; see above. No
+Windows sound setting will fix it.
+
+**He talks over himself, or answers when you said nothing.** Your microphone is
+hearing the speakers, and each phantom turn cancels the answer mid-word.
+Headphones remove it entirely. `/stt` through VoiceStudio or Scribe also fixes
+it properly, since that path uses an echo-cancelled stream.
+
+**"JARVIS has no brain."** The LiteLLM proxy did not start. Usually `google-auth`
+missing from the venv, or no `gcloud` sign-in.
+
+**Replies take about four seconds.** Roughly 3.5s of that is the model and ~1.2s
+the voice. On Gemini via the proxy, `jarvis-pro` is slower still — it reasons
+before every reply, which is the wrong trade for speech.
 
 ---
 
