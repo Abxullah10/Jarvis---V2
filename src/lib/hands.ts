@@ -300,6 +300,13 @@ export const diag = {
 
 if (typeof window !== 'undefined') {
   ;(window as unknown as Record<string, unknown>).__hands = diag
+  // The live array too, in dev only. Gesture behaviour is otherwise
+  // untestable without a hand in front of a camera: with this, a pose can be
+  // staged from the console and the hold, the arming ring and the action it
+  // fires can all be checked deterministically.
+  if (import.meta.env.DEV) {
+    ;(window as unknown as Record<string, unknown>).__handsLive = hands
+  }
 }
 
 let landmarker: HandLandmarker | null = null

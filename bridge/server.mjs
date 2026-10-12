@@ -30,6 +30,7 @@ import { isAbsolute, join, relative, resolve as resolvePath } from 'node:path'
 import { openRemote, proxyError, vetTarget, PROXY_UA } from './net.mjs'
 import { probeUrl, renderPage } from './page.mjs'
 import { STORAGE, connectGoogle, connectSlack, disconnect, listIntegrations, todaysEvents } from './integrations.mjs'
+import { osActions, runOsAction } from './os.mjs'
 
 const PORT = Number(process.env.JARVIS_BRIDGE_PORT ?? 8787)
 
@@ -1038,6 +1039,42 @@ const handleRequest = async (req, res) => {
   // The Settings page: which accounts are connected, and connecting or
   // disconnecting them. Status only ever goes out — account name and expiry,
   // never a token — and secrets only ever come in, to be written locally.
+  // The fixed vocabulary of OS actions a gesture may trigger. Served so the
+  // page shows what is possible rather than hardcoding a list that drifts.
+  if (req.method === 'GET' && req.url === '/os') {
+    res.writeHead(200, { ...cors, 'content-type': 'application/json' })
+    return res.end(JSON.stringify({ actions: osActions() }))
+  }
+
+  // Press one of them. Origin is required: unlike an <img> fetch this reaches
+  // out of the browser and into whatever window is focused, so it must come
+  // from the page rather than from anything that can open a socket.
+  if (req.method === 'POST' && req.url === '/os') {
+    if (!origin) {
+      res.writeHead(403, cors)
+      return res.end('forbidden')
+    }
+    let body = ''
+    for await (const chunk of req) {
+      body += chunk
+      if (body.length > 1024) {
+        res.writeHead(413, cors)
+        return res.end('too large')
+      }
+    }
+    let msg
+    try {
+      msg = JSON.parse(body)
+    } catch {
+      res.writeHead(400, cors)
+      return res.end('bad json')
+    }
+    const result = await runOsAction(msg.action)
+    if (result.ok) console.log(`[jarvis] os: ${result.did}`)
+    res.writeHead(result.ok ? 200 : 400, { ...cors, 'content-type': 'application/json' })
+    return res.end(JSON.stringify(result))
+  }
+
   // Today's agenda for the Schedule panel. Always 200: "no calendar linked"
   // and "Google signed us out" are states the panel renders, not failures.
   if (req.method === 'GET' && req.url === '/calendar') {

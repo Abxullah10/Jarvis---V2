@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
-import { BONES, INDEX_TIP, THUMB_TIP, TIPS, WRIST, diag, hands } from '../lib/hands'
+import { INDEX_TIP, THUMB_TIP, TIPS, WRIST, diag, hands } from '../lib/hands'
+import { holdProgress, pollGestureActions } from '../lib/gestureActions'
 
 /**
  * Your hands, drawn on the glass.
@@ -46,6 +47,24 @@ const EASE_TAU = 0.012
 /** Past this, assume re-acquisition rather than movement and snap. A hand
  *  that was lost and found again must not slide across the screen. */
 const SNAP_DISTANCE = 160
+
+/**
+ * The fingers, as chains from the hand outward.
+ *
+ * BONES is a flat list of pairs, which is all you need to draw sticks of equal
+ * weight. Tapering needs to know how far along a finger each segment is, so
+ * the same skeleton is expressed here as five runs instead.
+ */
+const CHAINS: readonly (readonly number[])[] = [
+  [0, 1, 2, 3, 4], // thumb
+  [0, 5, 6, 7, 8], // index
+  [9, 10, 11, 12], // middle
+  [13, 14, 15, 16], // ring
+  [0, 17, 18, 19, 20], // pinky
+]
+
+/** The knuckle line, which is also the far edge of the palm membrane. */
+const PALM: readonly number[] = [5, 9, 13, 17]
 
 export function Pointer() {
   const canvas = useRef<HTMLCanvasElement>(null)
@@ -120,6 +139,11 @@ export function Pointer() {
         return
       }
 
+      // Driven from here because this already runs once a frame while hands
+      // are up, and stops when they are not. A timer of its own would have to
+      // learn when tracking starts and stops, which is state that lives here.
+      pollGestureActions(now)
+
       // Forget hands that are no longer tracked, or the map grows for the life
       // of the page as ids are handed out.
       const live = new Set(hands.map((hd) => hd.id))
@@ -158,26 +182,87 @@ export function Pointer() {
         ctx.lineCap = 'round'
         ctx.lineJoin = 'round'
 
-        // -- bones: soft pass, then the bright line ------------------------
-        ctx.globalAlpha = 0.4 * lit
+        // -- the targeting bracket ------------------------------------------
+        // Corner marks around the hand's bounds, matching the brackets on the
+        // instrument panels. It says the system has *acquired* the hand rather
+        // than merely drawn one, and it is the clearest signal that tracking
+        // is holding you: the bracket is steady when tracking is.
+        let minX = Infinity
+        let minY = Infinity
+        let maxX = -Infinity
+        let maxY = -Infinity
+        for (const q of p) {
+          if (q.x < minX) minX = q.x
+          if (q.y < minY) minY = q.y
+          if (q.x > maxX) maxX = q.x
+          if (q.y > maxY) maxY = q.y
+        }
+        const pad = 16 * scale
+        const arm = Math.min(18 * scale, (maxX - minX) / 3)
+        minX -= pad; minY -= pad; maxX += pad; maxY += pad
+        ctx.globalAlpha = 0.3 * lit
         ctx.strokeStyle = accent
         ctx.shadowColor = accent
-        ctx.shadowBlur = 22 * scale
-        ctx.lineWidth = GLOW_WIDTH * scale
+        ctx.shadowBlur = 0
+        ctx.lineWidth = 1.2 * scale
         ctx.beginPath()
-        for (const [a, b] of BONES) {
-          ctx.moveTo(p[a].x, p[a].y)
-          ctx.lineTo(p[b].x, p[b].y)
+        for (const [cxb, cyb, sx, sy] of [
+          [minX, minY, 1, 1], [maxX, minY, -1, 1],
+          [minX, maxY, 1, -1], [maxX, maxY, -1, -1],
+        ] as const) {
+          ctx.moveTo(cxb + sx * arm, cyb)
+          ctx.lineTo(cxb, cyb)
+          ctx.lineTo(cxb, cyb + sy * arm)
         }
         ctx.stroke()
 
+        // -- the palm, as a membrane ----------------------------------------
+        // Five sticks from a wrist is a diagram; a filled palm is a hand. Kept
+        // very low alpha so it reads as the light passing through a projection
+        // rather than as a solid object sitting over the interface.
+        ctx.globalAlpha = 0.14 * lit
+        ctx.fillStyle = accent
+        ctx.shadowBlur = 0
+        ctx.beginPath()
+        ctx.moveTo(p[WRIST].x, p[WRIST].y)
+        for (const i of PALM) ctx.lineTo(p[i].x, p[i].y)
+        ctx.closePath()
+        ctx.fill()
+
+        // -- bones: soft pass, then the bright line, tapered ----------------
+        // Drawn per finger rather than as one path so the line can thin toward
+        // the fingertips. A uniform width is what makes a skeleton read as
+        // scaffolding; tapering is most of what makes it read as anatomy.
+        const strokeChains = (widthAt: (step: number, of: number) => number) => {
+          for (const chain of CHAINS) {
+            for (let i = 0; i < chain.length - 1; i++) {
+              ctx.lineWidth = widthAt(i, chain.length - 1)
+              ctx.beginPath()
+              ctx.moveTo(p[chain[i]].x, p[chain[i]].y)
+              ctx.lineTo(p[chain[i + 1]].x, p[chain[i + 1]].y)
+              ctx.stroke()
+            }
+          }
+        }
+
+        ctx.globalAlpha = 0.34 * lit
+        ctx.strokeStyle = accent
+        ctx.shadowColor = accent
+        ctx.shadowBlur = 20 * scale
+        strokeChains((i, of) => GLOW_WIDTH * scale * (1 - (i / of) * 0.45))
+
         ctx.globalAlpha = 1 * lit
         ctx.shadowBlur = 6 * scale
-        ctx.lineWidth = LINE_WIDTH * scale
+        strokeChains((i, of) => LINE_WIDTH * scale * (1 - (i / of) * 0.5))
+
+        // The knuckle arch last and fainter: it is connective tissue, not a
+        // finger, and at full weight it draws the eye to the wrong place.
+        ctx.globalAlpha = 0.5 * lit
+        ctx.lineWidth = LINE_WIDTH * 0.8 * scale
         ctx.beginPath()
-        for (const [a, b] of BONES) {
-          ctx.moveTo(p[a].x, p[a].y)
-          ctx.lineTo(p[b].x, p[b].y)
+        for (let i = 0; i < PALM.length - 1; i++) {
+          ctx.moveTo(p[PALM[i]].x, p[PALM[i]].y)
+          ctx.lineTo(p[PALM[i + 1]].x, p[PALM[i + 1]].y)
         }
         ctx.stroke()
 
@@ -187,9 +272,29 @@ export function Pointer() {
         ctx.shadowBlur = 4 * scale
         for (let i = 0; i < p.length; i++) {
           if (i === INDEX_TIP) continue // the cursor draws its own
-          const r = (TIPS.includes(i) ? 3.6 : i === WRIST ? 4 : 2.2) * scale
+          if (TIPS.includes(i)) continue // tips get their own treatment below
+          const r = (i === WRIST ? 4 : 2.2) * scale
           ctx.beginPath()
           ctx.arc(p[i].x, p[i].y, r, 0, Math.PI * 2)
+          ctx.fill()
+        }
+
+        // -- fingertips ------------------------------------------------------
+        // A ring rather than a dot. The fingertips are the business end of a
+        // hand and the only joints you aim with, so they are the one part
+        // worth drawing as a deliberate mark instead of another blob.
+        for (const i of TIPS) {
+          if (i === INDEX_TIP) continue
+          ctx.globalAlpha = 0.9 * lit
+          ctx.shadowBlur = 10 * scale
+          ctx.lineWidth = 1.4 * scale
+          ctx.strokeStyle = accent
+          ctx.beginPath()
+          ctx.arc(p[i].x, p[i].y, 4.2 * scale, 0, Math.PI * 2)
+          ctx.stroke()
+          ctx.globalAlpha = 0.5 * lit
+          ctx.beginPath()
+          ctx.arc(p[i].x, p[i].y, 1.5 * scale, 0, Math.PI * 2)
           ctx.fill()
         }
 
@@ -244,6 +349,30 @@ export function Pointer() {
         ctx.beginPath()
         ctx.arc(cx, cy, (hand.pinched ? 4.2 : 3) * scale, 0, Math.PI * 2)
         ctx.fill()
+
+        // -- a gesture arming -----------------------------------------------
+        // An action pose has to be held, and a wait with no feedback is
+        // indistinguishable from a thing that does not work. The arc closing
+        // says both that the pose was recognised and how much longer to hold.
+        const arming = holdProgress.get(hand.id) ?? 0
+        if (arming > 0) {
+          const r = 17 * scale
+          ctx.globalAlpha = 0.25
+          ctx.strokeStyle = accent
+          ctx.lineWidth = 2.5 * scale
+          ctx.shadowBlur = 0
+          ctx.beginPath()
+          ctx.arc(cx, cy, r, 0, Math.PI * 2)
+          ctx.stroke()
+
+          ctx.globalAlpha = 1
+          ctx.shadowColor = accent
+          ctx.shadowBlur = 10 * scale
+          ctx.beginPath()
+          // From twelve o'clock, clockwise, like anything else that fills up.
+          ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + arming * Math.PI * 2)
+          ctx.stroke()
+        }
 
         // -- what it thinks you are doing -----------------------------------
         // Below the wrist, quiet. Worth showing because when a gesture is

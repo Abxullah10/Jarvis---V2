@@ -2366,7 +2366,7 @@ kbd {
    let the panels shrink before anything overlaps. */
 @media (max-width: 1500px) {
   .column { width: 250px; }
-  .comms { width: 320px; right: 32px; }
+  .right-stack { width: 320px; right: 32px; }
   .column-left { left: 32px; }
   .column-right { right: 32px; }
 }
@@ -2599,10 +2599,11 @@ kbd {
    means this has to opt back in or it could be neither typed into nor
    scrolled. */
 
-.comms {
-  /* The right-hand column, opposite the instrument stack: same top line as
-     the panels, run down to the footer, and wider than an instrument
-     column because a conversation needs line length. */
+/* The right-hand stack: the camera preview, when it is on, above the
+   conversation. A positioned wrapper so the two share one column and the chat
+   gives up exactly the height the preview takes — rather than the two being
+   placed independently and having to agree with each other about it. */
+.right-stack {
   position: absolute;
   top: 150px;
   right: 60px;
@@ -2610,9 +2611,43 @@ kbd {
   width: 380px;
   display: flex;
   flex-direction: column;
+  gap: 14px;
+  pointer-events: none;
+}
+
+.comms {
+  /* Takes whatever the preview leaves. min-height lets it shrink below its
+     content, so the scrolling message list absorbs the difference rather than
+     the panel overflowing its column. */
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   pointer-events: auto;
   text-transform: none;
   letter-spacing: 0.01em;
+}
+
+/* The camera preview. Hidden rather than unmounted when the camera is off, so
+   turning it on does not relayout the column. */
+.peek {
+  flex: none;
+  pointer-events: auto;
+}
+
+.peek-off { display: none; }
+
+.peek-video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  background: #000;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
+  /* Mirrored to match the hand overlay, which is mirrored so that moving your
+     hand right moves the cursor right. An unmirrored preview beside it would
+     have you reaching the wrong way. */
+  transform: scaleX(-1);
 }
 
 .comms .inst-head { flex: none; margin-bottom: 8px; }
@@ -2685,7 +2720,7 @@ kbd {
 }
 
 @media (max-width: 1150px) {
-  .comms { left: 50%; right: auto; top: auto; transform: translateX(-50%); width: min(780px, 92vw); height: 34vh; }
+  .right-stack { left: 50%; right: auto; top: auto; transform: translateX(-50%); width: min(780px, 92vw); height: 40vh; }
 }
 
 /* ---------------------------------------------------------- COMPACT HEIGHT
@@ -2695,7 +2730,7 @@ kbd {
    shrinking anything on screens that have the room. */
 @media (max-height: 950px) {
   .column { top: 136px; gap: 10px; }
-  .comms { top: 136px; }
+  .right-stack { top: 136px; }
   .inst { padding: 10px 14px 11px; }
   .inst-head { margin-bottom: 7px; }
   .inst-body { gap: 7px; }

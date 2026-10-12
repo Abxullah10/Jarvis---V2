@@ -19,6 +19,7 @@ import {
 } from './Instruments'
 import { ReactorCallouts } from './Reactor'
 import { Comms } from './Comms'
+import { CameraPeek } from './CameraPeek'
 import { Settings } from './Settings'
 
 const statusText: Record<Phase, string> = {
@@ -167,8 +168,12 @@ export function Hud() {
         )}
       </AnimatePresence>
 
-      {/* Panel 07: the full conversation, kept, with typed input. */}
-      {ui.chrome.transcript && <Comms />}
+      {/* The right-hand column: what the camera sees while it is on, above
+          panel 07, the full conversation with typed input. */}
+      <div className="right-stack">
+        <CameraPeek />
+        {ui.chrome.transcript && <Comms />}
+      </div>
 
       <AnimatePresence>
         {caption && (
