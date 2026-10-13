@@ -21,6 +21,7 @@ import { ReactorCallouts } from './Reactor'
 import { Comms } from './Comms'
 import { CameraPeek } from './CameraPeek'
 import { Settings } from './Settings'
+import { MicPicker } from './MicPicker'
 
 const statusText: Record<Phase, string> = {
   offline: 'OFFLINE',
@@ -90,6 +91,8 @@ export function Hud() {
             <span className="brand-sub">Just A Rather Very Intelligent System</span>
           </div>
         )}
+
+        <MicPicker />
 
         <button
           type="button"

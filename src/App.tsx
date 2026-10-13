@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Reactor } from './ui/Reactor'
 import { Hud } from './ui/Hud'
-import { Boot } from './ui/Boot'
+import { Boot, BOOT_LINE, BOOT_MS } from './ui/Boot'
 import { Ignition } from './ui/Ignition'
 import { Diagnostics } from './ui/Diagnostics'
 import { useStore } from './store'
@@ -368,10 +368,11 @@ export default function App() {
     // AudioContext or speech synthesis without a user gesture.
     await sfx.unlockAudio()
     sfx.play('boot')
-    // The score. Must be started from inside this click handler for the same
-    // reason as the rest of the audio.
-    // Unlocks audio and warms the files. Must happen inside the click handler;
-    // the boot line itself is played at the end of the sequence, not here.
+    // The score. Unlocks audio and warms the files, which must happen inside
+    // this click handler for the same reason as the rest of the audio — and it
+    // is also what lets the intro clip play with its own sound a moment later.
+    // No musical boot cue any more: the clip carries the start-up, and a
+    // fourteen-second swell under a five-second reactor spin-up outlived it.
     music.enable()
     // No ambient bed. The looping room tone sits under every exchange, and
     // against a synthesised voice it reads as a problem with the audio rather
@@ -512,23 +513,30 @@ export default function App() {
       }, 200)
     }
 
-    // Long enough for the four-beat start-up sequence in Boot.tsx to play —
-    // status bar, rings, suit schematic, reactor power-up — before the live
-    // interface takes over. Kept a touch under the boot cue so the music is
-    // still rising as the reactor lands.
-    await new Promise((r) => setTimeout(r, 9200)) // boot sequence
-
     /**
-     * The spoken line lands here, not at ignition.
+     * The intro: the reactor clip plays, and JARVIS introduces himself over it.
      *
-     * It used to play from the click handler, which was right when the file
-     * was a fourteen-second musical swell meant to rise *under* the sequence.
-     * It is now four words, and four words spoken over a nine-second animation
-     * are gone before the first ring has finished drawing — they announce
-     * nothing, because nothing has happened yet. "Systems online" is a report
-     * on a completed start-up, so it belongs at the end of one.
+     * The line is spoken *during* the sequence rather than after it, which is
+     * the opposite of what the old nine-second SVG boot wanted. Four words over
+     * a nine-second animation announced nothing, because nothing had happened
+     * yet; four words over a five-second reactor spin-up are the reactor coming
+     * up to power, which is the thing on screen. The short lead-in gives the
+     * clip its first beat alone and lands the voice with the caption Boot shows
+     * at 1.4s — allowing for the engine's own latency, which is why this is not
+     * exactly 1400.
+     *
+     * Not awaited: a slow voice model must not hold the interface back, and the
+     * line finishing late over a live scene is fine.
      */
-    music.playBoot()
+    await new Promise((r) => setTimeout(r, 900))
+    const intro = createSpeaker()
+    speaker.current = intro
+    intro.say(BOOT_LINE)
+    void intro.end()
+
+    // The rest of the overlay's time on screen. BOOT_MS is the clip plus a beat
+    // to land on, and it is Boot's own constant so the two cannot drift.
+    await new Promise((r) => setTimeout(r, BOOT_MS - 900))
 
     await warming
     store.getState().setConnected(connectedLabels())

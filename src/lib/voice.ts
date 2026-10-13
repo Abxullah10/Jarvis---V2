@@ -343,6 +343,14 @@ export const diag = {
   heardAt: 0,
   /** Last failure — a transcription error, or a capture error. */
   lastError: '',
+  /** Bytes in the last segment sent for transcription. */
+  bytes: 0,
+  /** Segments too small for the bridge to even send onward. */
+  tooShort: 0,
+  /** Microphone level this instant, 0..1, before any mode filtering. */
+  level: 0,
+  /** Loudest level seen since load. Zero while talking means no audio at all. */
+  peak: 0,
   /** Times the wake word matched. */
   wakes: 0,
   /** Current mode, as the app last reported it. */
@@ -448,6 +456,15 @@ async function startElevenVoice(h: VoiceHandlers): Promise<Voice> {
   const transcribe = async (blob: Blob) => {
     const mode = h.mode()
     if (mode === 'deaf') return
+    /**
+     * The size of what was actually captured, which decides what an empty
+     * transcript means. The bridge answers {text:''} for anything under
+     * 1200 bytes without calling out at all, so a blob of a few hundred bytes
+     * and a genuine failure to recognise speech are reported identically to
+     * the app, and 'nothing intelligible' is printed for both.
+     */
+    diag.bytes = blob.size
+    if (blob.size < 1200) diag.tooShort++
     const t0 = performance.now()
     try {
       const res = await fetch(`${BRIDGE_HTTP_URL}/stt`, {
@@ -543,6 +560,19 @@ async function startElevenVoice(h: VoiceHandlers): Promise<Voice> {
       void drain()
     },
     onLevel: (v) => {
+      /**
+       * Recorded before the mode gate, so it is the microphone's real level
+       * rather than only what the reactor is allowed to paint.
+       *
+       * This is the fact that separates the two ways the voice loop goes quiet,
+       * which are indistinguishable from outside: a microphone delivering
+       * silence, and a detector whose threshold the speech never crosses. Both
+       * leave `heard` empty with no error. A running peak answers it outright —
+       * if it stays at zero while someone talks, no audio is arriving at all.
+       */
+      diag.level = Math.round(v * 1000) / 1000
+      if (v > diag.peak) diag.peak = Math.round(v * 1000) / 1000
+
       // Only paint the live level while actually listening for a command, so a
       // dormant reactor stays calm and does not twitch at every room noise.
       const mode = h.mode()

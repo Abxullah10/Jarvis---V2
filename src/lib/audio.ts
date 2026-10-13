@@ -1,8 +1,14 @@
 /**
- * A single shared microphone stream plus an analyser, so the reactor can pulse
- * with the user's voice. Opening the mic more than once causes Chrome to drop
- * the earlier stream, so everything that needs audio goes through here.
+ * A shared microphone stream plus an analyser, so the reactor can pulse with
+ * the user's voice.
+ *
+ * This is the reactor's stream. The voice detector deliberately opens its own
+ * capture instead of sharing this one — see the note in vad.ts: a second
+ * consumer of this stream, clone included, receives nothing but silence in
+ * Chromium, which is what made JARVIS unable to hear anything at all.
  */
+
+import { micConstraints } from './mic'
 
 let stream: MediaStream | null = null
 let ctx: AudioContext | null = null
@@ -11,13 +17,7 @@ let buf: Uint8Array | null = null
 
 export async function getMic(): Promise<MediaStream> {
   if (stream) return stream
-  stream = await navigator.mediaDevices.getUserMedia({
-    audio: {
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
-    },
-  })
+  stream = await navigator.mediaDevices.getUserMedia(micConstraints())
   return stream
 }
 

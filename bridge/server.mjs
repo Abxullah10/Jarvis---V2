@@ -567,6 +567,14 @@ const VS_VOICE = process.env.JARVIS_VS_VOICE ?? null
 const VS_STT = process.env.JARVIS_VS_STT !== '0'
 
 /**
+ * How long VoiceStudio gets to transcribe before the turn goes to Scribe.
+ *
+ * Scribe returns in roughly two seconds, so anything past this is pure loss.
+ * Raise it only if the local model is actually faster on your machine.
+ */
+const VS_STT_BUDGET_MS = Number(process.env.JARVIS_VS_STT_BUDGET_MS ?? 3500)
+
+/**
  * Whether the ElevenLabs key may use Speech to Text, found out by asking.
  *
  * Sends half a second of silence to Scribe. A 401 or 403 means no; anything
@@ -1462,9 +1470,29 @@ const handleRequest = async (req, res) => {
         const form = new FormData()
         form.append('model', 'whisper-1')
         form.append('file', new Blob([Buffer.concat(chunks)], { type }), `speech.${ext}`)
+        /**
+         * Capped, because being local is worth nothing if it is slower than
+         * the network.
+         *
+         * VoiceStudio transcribes accurately but runs Whisper on this machine,
+         * and it is not quick: measured at 22.4s for a two second clip, three
+         * runs within 0.1s of each other, while Scribe answers the same clip
+         * in about two. Uncapped, every turn paid that, and because it does
+         * succeed there was no fallback and nothing in the log to show why.
+         *
+         * The damage was not only the wait. The app opens a 14s window for a
+         * reply after the wake word (AWAIT_SPEECH_MS), so a 22s transcript
+         * arrived after the window had already closed: JARVIS greeted the user
+         * long after they had spoken, and the question that followed was
+         * judged against the wake word again and discarded. He looked like he
+         * was ignoring every command.
+         *
+         * A local transcriber that cannot beat the network loses the turn.
+         */
         const upstream = await fetch(`${VS_URL}/v1/audio/transcriptions`, {
           method: 'POST',
           body: form,
+          signal: AbortSignal.timeout(VS_STT_BUDGET_MS),
         })
         if (upstream.ok) {
           const data = await upstream.json()
@@ -2013,6 +2041,17 @@ wss.on('connection', (socket) => {
        */
       const text = msg.text
       const id = typeof msg.id === 'string' ? msg.id : null
+      /**
+       * Logged because its absence is the single most useful fact when the
+       * answer is "he doesn't reply".
+       *
+       * Speech reaching the brain and the brain answering fail identically
+       * from the outside — silence — but they are fixed in completely
+       * different places. Without this line both look the same in the log,
+       * and the only way to tell them apart was to replay the whole pipeline
+       * by hand.
+       */
+      console.log('[jarvis] heard: ' + JSON.stringify(text.slice(0, 120)))
       void settling.then(() => {
         answering = id
         if (deliver) {

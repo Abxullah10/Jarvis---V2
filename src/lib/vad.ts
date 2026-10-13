@@ -1,4 +1,4 @@
-import { getMic } from './audio'
+import { micConstraints } from './mic'
 
 /**
  * Voice-activity detection and segment capture.
@@ -84,6 +84,26 @@ const MAX_MS = 20000
 const FLOOR_UP = 0.0008
 const FLOOR_DOWN = 0.02
 
+/**
+ * The detector's raw working numbers, published on `window.__vad`.
+ *
+ * `voice.diag` reports a level scaled for the reactor and clamped to 1, which
+ * saturates at an energy of about 0.083 — so everything from a quiet room to a
+ * pinned input reads the same there, and the one question that matters when
+ * nothing is heard (is the signal missing, or is the threshold out of reach?)
+ * cannot be answered from it. These are the unscaled values.
+ */
+export const vadDiag = {
+  /** Smoothed RMS of the microphone, unscaled. */
+  energy: 0,
+  /** Adaptive noise floor the detector has settled on. */
+  floor: 0,
+  /** Energy a sound must exceed to count as speech: floor x 2.6. */
+  threshold: 0,
+  /** Whether a segment is being captured right now. */
+  speaking: false,
+}
+
 function pickMime(): string {
   const candidates = [
     'audio/webm;codecs=opus',
@@ -100,9 +120,23 @@ function pickMime(): string {
 }
 
 export async function startVad(h: VadHandlers): Promise<Vad> {
+  ;(window as unknown as Record<string, unknown>).__vad = vadDiag
   let stream: MediaStream
   try {
-    stream = await getMic()
+    /**
+     * The detector opens the microphone itself instead of sharing getMic().
+     *
+     * The shared stream already has the reactor's analyser attached in another
+     * AudioContext, and a second consumer of it — a source node on the stream,
+     * or even on a clone() of its track — receives continuous digital silence
+     * in Chromium. Nothing reports a fault: the track is live and unmuted, the
+     * context is running, the device is right, and every sample is 0.0.
+     *
+     * Measured in one instance, one second apart: a fresh getUserMedia saw
+     * 0.0024 RMS of room tone while the cloned track saw exactly 0. Cloning
+     * was tried first and is not sufficient; only a separate capture works.
+     */
+    stream = await navigator.mediaDevices.getUserMedia(micConstraints())
   } catch (err) {
     h.onError(
       err instanceof DOMException && err.name === 'NotAllowedError'
@@ -118,11 +152,16 @@ export async function startVad(h: VadHandlers): Promise<Vad> {
   }
 
   const mime = pickMime()
+
+  // This capture is the detector's own, so the recorder below transcribes
+  // exactly the audio that triggered detection.
+  const own = stream
+
   const ctx = new AudioContext()
   // Some browsers start an AudioContext suspended even after a gesture; resume
   // is a no-op when it is already running.
   void ctx.resume()
-  const source = ctx.createMediaStreamSource(stream)
+  const source = ctx.createMediaStreamSource(own)
   const analyser = ctx.createAnalyser()
   analyser.fftSize = 1024
   analyser.smoothingTimeConstant = 0.35
@@ -154,9 +193,9 @@ export async function startVad(h: VadHandlers): Promise<Vad> {
   const startRecorder = () => {
     parts = []
     try {
-      recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream)
+      recorder = mime ? new MediaRecorder(own, { mimeType: mime }) : new MediaRecorder(own)
     } catch {
-      recorder = new MediaRecorder(stream)
+      recorder = new MediaRecorder(own)
     }
     recorder.ondataavailable = (e) => {
       if (e.data && e.data.size) parts.push(e.data)
@@ -219,6 +258,11 @@ export async function startVad(h: VadHandlers): Promise<Vad> {
     const release = threshold * RELEASE_RATIO
     const now = performance.now()
 
+    vadDiag.energy = smoothEnergy
+    vadDiag.floor = floor
+    vadDiag.threshold = threshold
+    vadDiag.speaking = speaking
+
     if (!speaking) {
       if (smoothEnergy > threshold) {
         if (armedAt === 0) {
@@ -260,6 +304,10 @@ export async function startVad(h: VadHandlers): Promise<Vad> {
       try {
         source.disconnect()
         void ctx.close()
+        // This capture is ours alone, so nothing else will release it and the
+        // microphone would stay held open after a stand down. The reactor's
+        // shared stream is separate and is deliberately left running.
+        for (const t of own.getTracks()) t.stop()
       } catch {
         /* noop */
       }
